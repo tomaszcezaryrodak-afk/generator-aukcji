@@ -1,4 +1,4 @@
-/* GranitoweZlewy Dashboard · Clean Design v2.1 | 2026-02-26 */
+/* GranitoweZlewy Dashboard · Clean Design v3.0 | 2026-02-26 */
 
 /* ============================================================
    TOKENY
@@ -19,11 +19,14 @@
   --text-light: #f0f0f0;
   --success: #2d7a4f;
   --error: #c0392b;
-  --radius: 12px;
-  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-sm: 9px;
+  --radius-xs: 6px;
   --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.06);
-  --shadow-hover: 0 2px 8px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.10);
+  --shadow-hover: 0 4px 16px rgba(0,0,0,0.10), 0 12px 32px rgba(0,0,0,0.08);
+  --shadow-card: 0 2px 8px rgba(0,0,0,0.05), 0 8px 24px rgba(0,0,0,0.06);
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -45,22 +48,24 @@ header[data-testid="stHeader"] { display: none !important; }
 /* Scrollbar */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #ccc; border-radius: 10px; }
+::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #b0b0b0; }
 
 /* Kontener */
 .block-container {
   padding-top: 0 !important;
+  max-width: 860px !important;
 }
 
 
 /* ============================================================
-   HEADER (jasny, zloty akcent)
+   HEADER
    ============================================================ */
 .gz-header {
   background: var(--bg-card);
   border-bottom: 1px solid rgba(0,0,0,0.06);
-  padding: 32px 32px 24px;
-  margin: -1rem -1rem 28px;
+  padding: 28px 32px 22px;
+  margin: -1rem -1rem 24px;
   position: relative;
 }
 
@@ -92,7 +97,7 @@ header[data-testid="stHeader"] { display: none !important; }
 
 .gz-header h1 {
   font-family: var(--font) !important;
-  font-size: 26px !important;
+  font-size: 24px !important;
   font-weight: 700 !important;
   color: var(--text) !important;
   letter-spacing: -0.5px !important;
@@ -106,46 +111,68 @@ header[data-testid="stHeader"] { display: none !important; }
 }
 
 .gz-header p {
-  font-size: 14px !important;
+  font-size: 13px !important;
   color: var(--text-secondary) !important;
   margin: 0 !important;
   font-weight: 400 !important;
-  letter-spacing: 0.3px !important;
+  letter-spacing: 0.2px !important;
   text-transform: none !important;
 }
 
 
 /* ============================================================
-   SEKCJE (naglowki formularza)
+   NAGLOWKI SEKCJI
    ============================================================ */
+.gz-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 28px 0 16px;
+}
 
-/* Sekcja "Dane produktu", "Podglad wynikow" - NIE uppercase */
+.gz-section-title-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(0,0,0,0.07);
+}
+
+.gz-section-title-text {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* h3 i h4 w markdown (Streamlit) */
 [data-testid="column"] h3,
 .stMarkdown h3 {
-  font-size: 16px !important;
+  font-size: 15px !important;
   font-weight: 600 !important;
   color: var(--text) !important;
   text-transform: none !important;
-  letter-spacing: 0 !important;
-  margin-bottom: 16px !important;
+  letter-spacing: -0.2px !important;
+  margin-bottom: 14px !important;
 }
 
-/* Naglowek h4 (grafiki, opis) */
 [data-testid="column"] h4,
 .stMarkdown h4 {
-  font-size: 14px !important;
+  font-size: 13px !important;
   font-weight: 600 !important;
-  color: var(--text) !important;
+  color: var(--text-secondary) !important;
   text-transform: none !important;
-  letter-spacing: 0 !important;
+  letter-spacing: 0.2px !important;
+  margin-bottom: 10px !important;
 }
 
 
 /* ============================================================
-   FORMULARZ (inputy, selectbox, textarea)
+   FORMULARZ
    ============================================================ */
 
-/* Labels nad inputami - A7: pelny kontrast */
+/* Labels */
 .stTextInput label,
 .stTextArea label,
 .stSelectbox label,
@@ -156,16 +183,24 @@ header[data-testid="stHeader"] { display: none !important; }
   color: var(--text) !important;
 }
 
-/* Formularz - max width na desktop (A1) */
-.stForm, [data-testid="stVerticalBlock"] > div:first-child {
-  max-width: 640px;
+/* Inputy */
+.stTextInput input,
+.stTextArea textarea,
+.stSelectbox select {
+  border-radius: var(--radius-sm) !important;
+  border-color: rgba(0,0,0,0.12) !important;
+  transition: border-color var(--transition), box-shadow var(--transition) !important;
 }
 
-/* Inputy - subtelny focus */
 .stTextInput input:focus,
 .stTextArea textarea:focus {
   border-color: var(--gold) !important;
-  box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.15) !important;
+  box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.12) !important;
+}
+
+/* Formularz max-width */
+.stForm, [data-testid="stVerticalBlock"] > div:first-child {
+  max-width: 680px;
 }
 
 
@@ -173,20 +208,57 @@ header[data-testid="stHeader"] { display: none !important; }
    UPLOAD ZONE
    ============================================================ */
 div[data-testid="stFileUploader"] {
-  border: 2px dashed rgba(201, 168, 76, 0.3) !important;
+  border: 2px dashed rgba(201, 168, 76, 0.30) !important;
   border-radius: var(--radius) !important;
-  background: rgba(201, 168, 76, 0.02) !important;
-  transition: border-color 0.2s, background 0.2s !important;
+  background: rgba(201, 168, 76, 0.025) !important;
+  transition: border-color var(--transition), background var(--transition) !important;
 }
 
 div[data-testid="stFileUploader"]:hover {
   border-color: var(--gold) !important;
-  background: rgba(201, 168, 76, 0.05) !important;
+  background: rgba(201, 168, 76, 0.06) !important;
 }
 
 
 /* ============================================================
-   PRZYCISK GLOWNY (Generuj aukcje)
+   MINIATURKI ZDJEC ZRODLOWYCH
+   ============================================================ */
+.gz-thumb-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 14px 0 20px;
+}
+
+.gz-thumb-item {
+  position: relative;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #f0f0f0;
+  aspect-ratio: 1;
+}
+
+.gz-thumb-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Streamlit image w siatce miniaturek - bardziej kompaktowe */
+[data-testid="stImage"] {
+  border-radius: var(--radius-sm) !important;
+  overflow: hidden !important;
+}
+
+[data-testid="stImage"] img {
+  border-radius: var(--radius-sm) !important;
+  transition: transform 0.25s ease !important;
+}
+
+
+/* ============================================================
+   PRZYCISK GLOWNY
    ============================================================ */
 .stButton > button[kind="primary"] {
   background: linear-gradient(135deg, var(--gold) 0%, var(--gold-dim) 100%) !important;
@@ -196,17 +268,24 @@ div[data-testid="stFileUploader"]:hover {
   font-family: var(--font) !important;
   font-size: 14px !important;
   font-weight: 600 !important;
-  padding: 10px 24px !important;
-  box-shadow: 0 2px 8px rgba(201, 168, 76, 0.2) !important;
-  transition: box-shadow 0.2s, transform 0.15s !important;
+  padding: 12px 28px !important;
+  height: 46px !important;
+  box-shadow: 0 2px 8px rgba(201, 168, 76, 0.25), 0 1px 2px rgba(0,0,0,0.08) !important;
+  transition: box-shadow var(--transition), transform var(--transition) !important;
+  letter-spacing: 0.1px !important;
 }
 
 .stButton > button[kind="primary"]:hover {
-  box-shadow: 0 4px 16px rgba(201, 168, 76, 0.3) !important;
+  box-shadow: 0 6px 20px rgba(201, 168, 76, 0.35), 0 2px 6px rgba(0,0,0,0.10) !important;
   transform: translateY(-1px) !important;
 }
 
-/* Secondary buttons - normalne, nie zlote */
+.stButton > button[kind="primary"]:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 8px rgba(201, 168, 76, 0.20) !important;
+}
+
+/* Secondary */
 .stButton > button[kind="secondary"],
 .stDownloadButton > button {
   background: var(--bg-card) !important;
@@ -214,15 +293,16 @@ div[data-testid="stFileUploader"]:hover {
   border: 1px solid rgba(0,0,0,0.12) !important;
   border-radius: var(--radius-sm) !important;
   font-family: var(--font) !important;
-  font-size: 14px !important;
+  font-size: 13px !important;
   font-weight: 500 !important;
-  transition: border-color 0.2s, box-shadow 0.2s !important;
+  height: 40px !important;
+  transition: border-color var(--transition), box-shadow var(--transition) !important;
 }
 
 .stButton > button[kind="secondary"]:hover,
 .stDownloadButton > button:hover {
   border-color: var(--gold) !important;
-  box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.12) !important;
+  box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.10) !important;
 }
 
 
@@ -232,7 +312,7 @@ div[data-testid="stFileUploader"]:hover {
 .stProgress > div {
   background: rgba(0,0,0,0.06) !important;
   border-radius: 100px !important;
-  height: 4px !important;
+  height: 3px !important;
 }
 
 .stProgress > div > div {
@@ -242,7 +322,7 @@ div[data-testid="stFileUploader"]:hover {
 
 
 /* ============================================================
-   WYNIKI (gz-results) - lekki styl
+   WYNIKI (gz-results)
    ============================================================ */
 .gz-results {
   background: var(--bg-card);
@@ -250,7 +330,7 @@ div[data-testid="stFileUploader"]:hover {
   border: 1px solid rgba(0,0,0,0.06);
   box-shadow: var(--shadow);
   overflow: hidden;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .gz-results-header {
@@ -283,6 +363,175 @@ div[data-testid="stFileUploader"]:hover {
 
 
 /* ============================================================
+   KARTA GRAFIK (image gallery card)
+   ============================================================ */
+.gz-gallery-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: var(--shadow-card);
+  padding: 20px 20px 16px;
+  margin: 20px 0;
+}
+
+.gz-gallery-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+.gz-gallery-title {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0;
+}
+
+.gz-gallery-count {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 100px;
+  padding: 2px 10px;
+}
+
+/* Hover na obrazkach wewnątrz galerii */
+.gz-gallery-card [data-testid="stImage"] img {
+  transition: transform 0.25s ease, box-shadow 0.25s ease !important;
+  border-radius: var(--radius-sm) !important;
+  cursor: zoom-in;
+}
+
+.gz-gallery-card [data-testid="stImage"]:hover img {
+  transform: scale(1.03) !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14) !important;
+}
+
+/* Wrapper na każdy obrazek w galerii */
+.gz-image-cell {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #f8f8f8;
+  border: 1px solid rgba(0,0,0,0.06);
+  transition: box-shadow var(--transition);
+}
+
+.gz-image-cell:hover {
+  box-shadow: var(--shadow-hover);
+}
+
+/* Caption pod obrazkiem */
+.gz-image-caption {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 6px 4px 0;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+
+/* ============================================================
+   KARTA OPISU (description card)
+   ============================================================ */
+.gz-desc-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  margin: 20px 0;
+}
+
+.gz-desc-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  background: var(--bg);
+}
+
+.gz-desc-card-title {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.gz-desc-card-body {
+  padding: 4px 8px 8px;
+}
+
+/* Tytuł Allegro - kod block */
+.gz-title-block {
+  background: var(--bg);
+  border: 1px solid rgba(0,0,0,0.07);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  font-family: 'SFMono-Regular', 'Consolas', monospace;
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+/* Opis HTML preview wrapper */
+.gz-desc-preview {
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+
+/* ============================================================
+   TABY (Podglad / Kod HTML)
+   ============================================================ */
+.stTabs [data-baseweb="tab-list"] {
+  gap: 0 !important;
+  background: var(--bg) !important;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0 !important;
+  padding: 0 4px !important;
+  border-bottom: 1px solid rgba(0,0,0,0.07) !important;
+}
+
+.stTabs [data-baseweb="tab"] {
+  font-family: var(--font) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--text-secondary) !important;
+  padding: 10px 18px !important;
+  border-radius: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  transition: color var(--transition), border-color var(--transition) !important;
+  background: transparent !important;
+}
+
+.stTabs [aria-selected="true"] {
+  color: var(--text) !important;
+  border-bottom-color: var(--gold) !important;
+  font-weight: 600 !important;
+  background: transparent !important;
+}
+
+.stTabs [data-baseweb="tab-panel"] {
+  padding: 16px 0 0 !important;
+}
+
+
+/* ============================================================
    TAGI / BADGES
    ============================================================ */
 .gz-tag {
@@ -304,14 +553,26 @@ div[data-testid="stFileUploader"]:hover {
 
 
 /* ============================================================
-   EXPANDERY (opisy, parametry)
+   EXPANDERY
    ============================================================ */
 [data-testid="stExpander"] {
   background: var(--bg-card) !important;
-  border: 1px solid rgba(0,0,0,0.06) !important;
+  border: 1px solid rgba(0,0,0,0.07) !important;
   border-radius: var(--radius-sm) !important;
-  box-shadow: var(--shadow) !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
   margin-bottom: 8px !important;
+  transition: box-shadow var(--transition) !important;
+}
+
+[data-testid="stExpander"]:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07) !important;
+}
+
+[data-testid="stExpander"] summary {
+  padding: 12px 16px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--text) !important;
 }
 
 [data-testid="stExpander"] svg {
@@ -324,101 +585,83 @@ div[data-testid="stFileUploader"]:hover {
    ============================================================ */
 .stAlert {
   border-radius: var(--radius-sm) !important;
+  font-size: 13px !important;
+}
+
+[data-testid="stNotification"] {
+  border-radius: var(--radius-sm) !important;
 }
 
 
 /* ============================================================
-   STOPKA
+   CODE BLOCK
    ============================================================ */
-.gz-footer {
-  margin-top: 48px;
-  padding: 20px 0;
+.stCode {
+  border-radius: var(--radius-sm) !important;
+  font-size: 13px !important;
+}
+
+.stCode pre {
+  border-radius: var(--radius-sm) !important;
+}
+
+
+/* ============================================================
+   BASELINKER SEKCJA (karta akcji)
+   ============================================================ */
+.gz-action-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: var(--shadow-card);
+  padding: 20px;
+  margin: 16px 0;
+}
+
+.gz-action-card-title {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+
+/* ============================================================
+   SEPARATOR
+   ============================================================ */
+.gz-separator {
+  border: none;
   border-top: 1px solid rgba(0,0,0,0.06);
-  text-align: center;
+  margin: 28px 0;
 }
 
-.gz-footer p {
-  font-size: 12px !important;
-  color: var(--text-muted) !important;
-  margin: 0 !important;
+/* Separator z etykieta */
+.gz-separator-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 28px 0;
 }
 
-.gz-footer span {
-  color: var(--gold);
-  font-weight: 600;
+.gz-separator-label::before,
+.gz-separator-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(0,0,0,0.07);
 }
 
-
-/* ============================================================
-   IMAGE CAPTIONS
-   ============================================================ */
-.stImage p {
-  font-size: 12px !important;
-  color: var(--text-muted) !important;
-  text-align: center !important;
-}
-
-
-/* ============================================================
-   COLUMNS SPACING
-   ============================================================ */
-[data-testid="column"] {
-  padding: 0 8px !important;
-}
-
-
-/* ============================================================
-   ANIMACJE
-   ============================================================ */
-@keyframes pulse-gold {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(201,168,76,0.4); }
-  50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(201,168,76,0); }
-}
-
-
-/* ============================================================
-   BADGES WALIDACJI
-   ============================================================ */
-.gz-badge-ok {
-  display: inline-block;
-  background: rgba(45, 122, 79, 0.08);
-  border: 1px solid rgba(45, 122, 79, 0.25);
-  color: #2d7a4f;
+.gz-separator-label span {
+  font-family: var(--font);
   font-size: 11px;
   font-weight: 600;
-  font-family: var(--font);
-  padding: 2px 10px;
-  border-radius: 100px;
-  margin-right: 6px;
-  margin-bottom: 4px;
-}
-
-.gz-badge-warn {
-  display: inline-block;
-  background: rgba(211, 153, 34, 0.08);
-  border: 1px solid rgba(211, 153, 34, 0.25);
-  color: #b8860b;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--font);
-  padding: 2px 10px;
-  border-radius: 100px;
-  margin-right: 6px;
-  margin-bottom: 4px;
-}
-
-.gz-badge-error {
-  display: inline-block;
-  background: rgba(192, 57, 43, 0.08);
-  border: 1px solid rgba(192, 57, 43, 0.25);
-  color: #c0392b;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--font);
-  padding: 2px 10px;
-  border-radius: 100px;
-  margin-right: 6px;
-  margin-bottom: 4px;
+  color: var(--text-muted);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 
@@ -443,28 +686,242 @@ div[data-testid="stFileUploader"]:hover {
 
 
 /* ============================================================
-   SEPARATOR (A14)
+   STOPKA
    ============================================================ */
-.gz-separator {
-  border: none;
+.gz-footer {
+  margin-top: 56px;
+  padding: 20px 0;
   border-top: 1px solid rgba(0,0,0,0.06);
-  margin: 24px 0;
+  text-align: center;
+}
+
+.gz-footer p {
+  font-size: 12px !important;
+  color: var(--text-muted) !important;
+  margin: 0 !important;
+}
+
+.gz-footer span {
+  color: var(--gold);
+  font-weight: 600;
 }
 
 
 /* ============================================================
-   RESPONSIVE
+   IMAGE CAPTIONS (Streamlit domyslne)
    ============================================================ */
-@media (max-width: 768px) {
+.stImage p,
+.stImage figcaption {
+  font-size: 11px !important;
+  color: var(--text-muted) !important;
+  text-align: center !important;
+  margin-top: 5px !important;
+}
+
+
+/* ============================================================
+   COLUMNS SPACING
+   ============================================================ */
+[data-testid="column"] {
+  padding: 0 6px !important;
+}
+
+
+/* ============================================================
+   BADGES WALIDACJI
+   ============================================================ */
+.gz-badge-ok {
+  display: inline-block;
+  background: rgba(45, 122, 79, 0.08);
+  border: 1px solid rgba(45, 122, 79, 0.25);
+  color: #2d7a4f;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font);
+  padding: 2px 10px;
+  border-radius: 100px;
+  margin-right: 5px;
+  margin-bottom: 4px;
+}
+
+.gz-badge-warn {
+  display: inline-block;
+  background: rgba(211, 153, 34, 0.08);
+  border: 1px solid rgba(211, 153, 34, 0.25);
+  color: #b8860b;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font);
+  padding: 2px 10px;
+  border-radius: 100px;
+  margin-right: 5px;
+  margin-bottom: 4px;
+}
+
+.gz-badge-error {
+  display: inline-block;
+  background: rgba(192, 57, 43, 0.08);
+  border: 1px solid rgba(192, 57, 43, 0.25);
+  color: #c0392b;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font);
+  padding: 2px 10px;
+  border-radius: 100px;
+  margin-right: 5px;
+  margin-bottom: 4px;
+}
+
+
+/* ============================================================
+   ETYKIETY SEKCJI + NUMEROWANE KARTY OBRAZKOW
+   ============================================================ */
+.gz-section-label {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  margin: 24px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+
+.gz-img-card {
+  position: relative;
+  margin-bottom: -4px;
+}
+
+.gz-img-num {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gold);
+  color: var(--black);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  pointer-events: none;
+}
+
+/* Chatbot: multiselect tagi w złotym tonie */
+.stMultiSelect [data-baseweb="tag"] {
+  background: var(--gold-subtle) !important;
+  border: 1px solid var(--gold-border) !important;
+  border-radius: 100px !important;
+  color: var(--text) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+}
+
+/* Chatbot: sekcja poprawek grafik */
+.gz-regen-section {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: var(--shadow-card);
+  padding: 20px;
+  margin: 20px 0;
+}
+
+
+/* ============================================================
+   ANIMACJE
+   ============================================================ */
+@keyframes pulse-gold {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(201,168,76,0.4); }
+  50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(201,168,76,0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.gz-gallery-card,
+.gz-desc-card,
+.gz-action-card {
+  animation: fade-in 0.3s ease forwards;
+}
+
+
+/* ============================================================
+   RESPONSIVE · MOBILE FIRST
+   ============================================================ */
+
+/* Telefon (< 480px) */
+@media (max-width: 480px) {
   .gz-header {
-    padding: 24px 16px 20px;
+    padding: 20px 16px 18px;
+    margin: -1rem -1rem 18px;
+  }
+  .gz-header h1 {
+    font-size: 20px !important;
+  }
+  .gz-header p {
+    font-size: 12px !important;
+  }
+  .gz-gallery-card {
+    padding: 14px 14px 10px;
+  }
+  .gz-desc-card-body {
+    padding: 4px 4px 6px;
+  }
+  /* Na mobile: 2 kolumny max w galerii */
+  .gz-gallery-card [data-testid="column"]:nth-child(3) {
+    display: none;
+  }
+  .stButton > button[kind="primary"] {
+    height: 50px !important;
+    font-size: 15px !important;
+  }
+}
+
+/* Tablet (480px - 768px) */
+@media (min-width: 481px) and (max-width: 768px) {
+  .gz-header {
+    padding: 24px 20px 20px;
     margin: -1rem -1rem 20px;
   }
   .gz-header h1 {
     font-size: 22px !important;
   }
+  .block-container {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+}
+
+/* Touch targets na mobile */
+@media (max-width: 768px) {
+  .stButton > button {
+    min-height: 44px !important;
+  }
+  [data-testid="stFileUploader"] {
+    min-height: 100px !important;
+  }
+  /* Daj wiecej oddechu sekcjom */
+  .gz-separator {
+    margin: 20px 0;
+  }
+  [data-testid="column"] {
+    padding: 0 4px !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .gz-badge-dot { animation: none; }
+  .gz-gallery-card,
+  .gz-desc-card,
+  .gz-action-card { animation: none; }
+  * { transition: none !important; }
 }

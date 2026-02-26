@@ -543,15 +543,32 @@ def render_results_section(all_results, sections, desc_text):
     </div>""", unsafe_allow_html=True)
 
     if all_results:
-        st.markdown("#### Grafiki produktowe")
-        img_cols = st.columns(min(len(all_results), 3))
-        for i, (name, img) in enumerate(all_results.items()):
-            with img_cols[i % 3]:
-                label = name.rsplit("_", 1)[0].replace("-", " ").replace("_", " ")
-                st.image(img, caption=label, use_container_width=True)
+        # Galeria grafik w karcie
+        img_keys = list(all_results.keys())
+        st.markdown(f'''<div class="gz-gallery-card">
+            <div class="gz-gallery-header">
+                <span class="gz-gallery-title">Grafiki produktowe</span>
+                <span class="gz-gallery-count">{len(img_keys)} grafik</span>
+            </div>
+        </div>''', unsafe_allow_html=True)
+        cols_per_row = min(len(img_keys), 3)
+        for row_start in range(0, len(img_keys), cols_per_row):
+            row_keys = img_keys[row_start:row_start + cols_per_row]
+            img_cols = st.columns(len(row_keys))
+            for col_idx, key in enumerate(row_keys):
+                with img_cols[col_idx]:
+                    img_num = row_start + col_idx + 1
+                    label = key.rsplit("_", 1)[0].replace("-", " ").replace("_", " ")
+                    st.markdown(f'<div class="gz-img-card"><span class="gz-img-num">{img_num}</span></div>', unsafe_allow_html=True)
+                    st.image(all_results[key], caption=label, use_container_width=True)
 
     if desc_text:
-        st.markdown("#### Opis aukcji Allegro")
+        # Opis aukcji w karcie
+        st.markdown('''<div class="gz-desc-card">
+            <div class="gz-desc-card-header">
+                <span class="gz-desc-card-title">Opis aukcji Allegro</span>
+            </div>
+        </div>''', unsafe_allow_html=True)
         tytul = sections.get("tytul", "")
         if tytul:
             st.markdown('**Tytuł Allegro** (kliknij ikonę aby skopiować)')
@@ -569,7 +586,7 @@ def render_results_section(all_results, sections, desc_text):
             tab_preview, tab_code = st.tabs(["Podgląd", "Kod HTML"])
             with tab_preview:
                 safe_opis = sanitize_html(sections["opis"])
-                allegro_wrapper = f'''<div style="font-family: Arial, sans-serif; max-width: 800px; padding: 20px; background: #fff; line-height: 1.6;">
+                allegro_wrapper = f'''<div style="font-family: Arial, sans-serif; max-width: 800px; padding: 20px; background: #fff; line-height: 1.6; border-radius: 8px;">
 {safe_opis}
 </div>'''
                 st.components.v1.html(allegro_wrapper, height=600, scrolling=True)
@@ -1013,96 +1030,111 @@ else:
         # Czat do poprawek opisu
         render_description_chat()
 
-        # --- Regeneracja grafik ---
+        # --- Czat do poprawek grafik ---
         if "source_images" in st.session_state and GENAI_AVAILABLE:
-            st.markdown('<hr class="gz-separator">', unsafe_allow_html=True)
-            st.markdown("#### Popraw grafikę")
+            st.markdown('''<div class="gz-separator-label"><span>Poprawki grafik</span></div>''', unsafe_allow_html=True)
+            st.markdown('''<div class="gz-regen-section">
+<p style="font-size:13px;color:#6e6e73;margin:0 0 4px;">
+Zaznacz grafiki do poprawki, opisz co zmienić i kliknij Wyślij.
+</p>
+</div>''', unsafe_allow_html=True)
 
             # B2: Limit regeneracji grafik
             regen_count = st.session_state.get("regen_count", 0)
             if regen_count >= MAX_REGEN_PER_SESSION:
                 st.warning(f"Osiągnąłeś limit {MAX_REGEN_PER_SESSION} regeneracji grafik w tej sesji.")
             else:
+                img_keys = list(all_results.keys())
+                img_labels = []
+                for idx, k in enumerate(img_keys):
+                    label = k.rsplit("_", 1)[0].replace("-", " ").replace("_", " ")
+                    img_labels.append(f"#{idx+1} {label}")
+
+                selected_images = st.multiselect(
+                    "Które grafiki poprawić?",
+                    options=list(range(len(img_keys))),
+                    format_func=lambda i: img_labels[i],
+                    key="regen_multiselect",
+                    placeholder="Wybierz grafiki do poprawki...",
+                )
+
                 regen_mode = st.radio(
-                    "Tryb regeneracji",
-                    ["Drobna poprawka", "Wygeneruj od nowa"],
+                    "Tryb",
+                    ["Popraw szczegóły", "Wygeneruj od nowa"],
                     horizontal=True,
                     key="regen_mode",
+                    help="Popraw szczegóły = drobna zmiana na istniejącej grafice. Od nowa = nowa scena z produktem.",
                 )
 
-                img_keys = list(all_results.keys())
-                img_labels = [k.rsplit("_", 1)[0].replace("-", " ").replace("_", " ") for k in img_keys]
-
-                selected_idx = st.selectbox(
-                    "Którą grafikę poprawić?",
-                    range(len(img_keys)),
-                    format_func=lambda i: img_labels[i],
-                    key="regen_select",
-                )
-
-                is_edit = regen_mode == "Drobna poprawka"
-                placeholder_text = (
-                    "np. Zmień kolor baterii na srebrny, usuń naczynie w tle"
-                    if is_edit
-                    else "np. Inna kuchnia, skandynawska, jasna, z drewnianym blatem"
-                )
-                regen_instruction = st.text_area(
+                regen_instruction = st.text_input(
                     "Co zmienić?",
-                    placeholder=placeholder_text,
+                    placeholder="np. Dodaj ociekacz, zmień kolor baterii na srebrny, jaśniejsze tło",
                     key="regen_prompt",
                 )
 
-                if st.button("Regeneruj grafikę", key="regen_btn"):
-                    if regen_instruction.strip():
+                is_edit = regen_mode == "Popraw szczegóły"
+
+                col_send, col_info = st.columns([1, 2])
+                with col_send:
+                    send_btn = st.button("Wyślij", key="regen_btn", type="primary", use_container_width=True)
+                with col_info:
+                    if selected_images:
+                        st.caption(f"Zaznaczono: {len(selected_images)} grafik · Tryb: {'edycja' if is_edit else 'od nowa'}")
+                    else:
+                        st.caption("Zaznacz grafiki powyżej")
+
+                if send_btn:
+                    if not selected_images:
+                        st.warning("Zaznacz przynajmniej jedną grafikę do poprawki.")
+                    elif not regen_instruction.strip():
+                        st.warning("Opisz co chcesz zmienić.")
+                    else:
                         api_key = _get_secret("GEMINI_API_KEY")
                         if api_key:
                             regen_client = genai.Client(api_key=api_key)
                             source_imgs = st.session_state["source_images"][:2]
-                            current_img = all_results[img_keys[selected_idx]]
-
                             mode_key = "edit" if is_edit else "full"
 
-                            if REGEN_AVAILABLE:
-                                full_prompt = get_regen_prompt(mode_key, regen_instruction)
-                            else:
-                                if is_edit:
-                                    full_prompt = (
-                                        f"Modify this product image based on this instruction: {regen_instruction}. "
-                                        f"Keep professional product photography quality. High resolution. "
-                                        f"Do NOT add any text, labels, watermarks, or annotations."
-                                    )
+                            progress = st.progress(0, text="Poprawiam grafiki...")
+                            success_count = 0
+
+                            for step, sel_idx in enumerate(selected_images):
+                                progress.progress(
+                                    (step + 1) / len(selected_images),
+                                    text=f"Poprawiam grafikę #{sel_idx+1} ({step+1}/{len(selected_images)})..."
+                                )
+                                current_img = all_results[img_keys[sel_idx]]
+
+                                if REGEN_AVAILABLE:
+                                    full_prompt = get_regen_prompt(mode_key, regen_instruction)
                                 else:
                                     full_prompt = (
-                                        f"Generate a new product lifestyle image based on this instruction: {regen_instruction}. "
-                                        f"Use the product from the source photos. Professional photography quality. High resolution. "
-                                        f"Do NOT add any text, labels, watermarks, or annotations."
+                                        f"{'Modify' if is_edit else 'Regenerate'} this product image: {regen_instruction}. "
+                                        f"Professional product photography quality. High resolution. "
+                                        f"Do NOT add text, labels, watermarks."
                                     )
 
-                            if is_edit:
-                                regen_images = [current_img]
-                            else:
-                                regen_images = source_imgs
+                                regen_images = [current_img] if is_edit else source_imgs
 
-                            with st.spinner("Regeneruję grafikę..."):
                                 try:
                                     new_img = generate_image(
                                         regen_client, full_prompt,
                                         regen_images,
-                                        "Regeneracja",
+                                        f"Poprawka #{sel_idx+1}",
                                     )
                                     if new_img:
-                                        all_results[img_keys[selected_idx]] = new_img
-                                        st.session_state["last_results"] = all_results
-                                        # B2: inkrementacja licznika regeneracji
+                                        all_results[img_keys[sel_idx]] = new_img
+                                        success_count += 1
                                         st.session_state["regen_count"] = st.session_state.get("regen_count", 0) + 1
                                         st.session_state["api_calls_count"] = st.session_state.get("api_calls_count", 0) + 1
-                                        st.rerun()
-                                    else:
-                                        st.warning("Nie udało się wygenerować nowej grafiki. Spróbuj inny opis.")
                                 except Exception as e:
-                                    st.error(f"Regeneracja: {get_user_error(e)}")
-                    else:
-                        st.warning("Opisz co chcesz zmienić w grafice.")
+                                    st.error(f"Grafika #{sel_idx+1}: {get_user_error(e)}")
+
+                            st.session_state["last_results"] = all_results
+                            progress.empty()
+                            if success_count > 0:
+                                st.success(f"Poprawiono {success_count}/{len(selected_images)} grafik.")
+                                st.rerun()
 
         # --- Akcje ---
         st.markdown('<hr class="gz-separator">', unsafe_allow_html=True)

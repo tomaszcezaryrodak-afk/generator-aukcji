@@ -1,0 +1,20 @@
+# Generator Aukcji - zmienne srodowiskowe
+# Skopiuj do .env i uzupelnij wartosci
+
+# Streamlit Cloud: wklej te wartości w Settings → Secrets
+# Format: key = "value"
+
+# Gemini API (wymagane)
+GEMINI_API_KEY=
+
+# Model Gemini (opcjonalne, domyślnie gemini-3-pro-image-preview)
+GEMINI_MODEL=
+
+# BaseLinker API (opcjonalne, do wysylki produktow)
+BASELINKER_TOKEN=
+BASELINKER_INVENTORY_ID=8075
+BASELINKER_PRICE_GROUP_ID=3778
+BASELINKER_WAREHOUSE_ID=bl_5255
+
+# Haslo dostepu do dashboardu (opcjonalne)
+APP_PASSWORD=

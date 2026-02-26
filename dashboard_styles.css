@@ -1,0 +1,470 @@
+/* GranitoweZlewy Dashboard · Clean Design v2.1 | 2026-02-26 */
+
+/* ============================================================
+   TOKENY
+   ============================================================ */
+:root {
+  --gold: #c9a84c;
+  --gold-light: #e2c06e;
+  --gold-dim: #a8893e;
+  --gold-subtle: rgba(201, 168, 76, 0.10);
+  --gold-border: rgba(201, 168, 76, 0.25);
+  --black: #0d0d0d;
+  --black-mid: #1a1a1a;
+  --bg: #f5f5f7;
+  --bg-card: #ffffff;
+  --text: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --text-muted: #999;
+  --text-light: #f0f0f0;
+  --success: #2d7a4f;
+  --error: #c0392b;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-hover: 0 2px 8px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.10);
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+
+/* ============================================================
+   GLOBALNE
+   ============================================================ */
+.stApp {
+  background-color: var(--bg);
+  font-family: var(--font);
+}
+
+/* Ukryj domyslne elementy Streamlit */
+footer { display: none !important; }
+#MainMenu { display: none !important; }
+header[data-testid="stHeader"] { display: none !important; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #ccc; border-radius: 10px; }
+
+/* Kontener */
+.block-container {
+  padding-top: 0 !important;
+}
+
+
+/* ============================================================
+   HEADER (jasny, zloty akcent)
+   ============================================================ */
+.gz-header {
+  background: var(--bg-card);
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  padding: 32px 32px 24px;
+  margin: -1rem -1rem 28px;
+  position: relative;
+}
+
+.gz-header::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--gold-dim), var(--gold), var(--gold-light), var(--gold));
+}
+
+.gz-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--gold-subtle);
+  border: 1px solid var(--gold-border);
+  border-radius: 100px;
+  padding: 4px 14px;
+  margin-bottom: 12px;
+}
+
+.gz-badge-dot {
+  width: 7px; height: 7px;
+  background: var(--gold);
+  border-radius: 50%;
+  animation: pulse-gold 2s infinite;
+}
+
+.gz-header h1 {
+  font-family: var(--font) !important;
+  font-size: 26px !important;
+  font-weight: 700 !important;
+  color: var(--text) !important;
+  letter-spacing: -0.5px !important;
+  margin: 0 0 4px !important;
+  line-height: 1.2 !important;
+  text-transform: none !important;
+}
+
+.gz-header h1 span {
+  color: var(--gold) !important;
+}
+
+.gz-header p {
+  font-size: 14px !important;
+  color: var(--text-secondary) !important;
+  margin: 0 !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.3px !important;
+  text-transform: none !important;
+}
+
+
+/* ============================================================
+   SEKCJE (naglowki formularza)
+   ============================================================ */
+
+/* Sekcja "Dane produktu", "Podglad wynikow" - NIE uppercase */
+[data-testid="column"] h3,
+.stMarkdown h3 {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: var(--text) !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  margin-bottom: 16px !important;
+}
+
+/* Naglowek h4 (grafiki, opis) */
+[data-testid="column"] h4,
+.stMarkdown h4 {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: var(--text) !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+
+/* ============================================================
+   FORMULARZ (inputy, selectbox, textarea)
+   ============================================================ */
+
+/* Labels nad inputami - A7: pelny kontrast */
+.stTextInput label,
+.stTextArea label,
+.stSelectbox label,
+.stNumberInput label,
+.stFileUploader label {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--text) !important;
+}
+
+/* Formularz - max width na desktop (A1) */
+.stForm, [data-testid="stVerticalBlock"] > div:first-child {
+  max-width: 640px;
+}
+
+/* Inputy - subtelny focus */
+.stTextInput input:focus,
+.stTextArea textarea:focus {
+  border-color: var(--gold) !important;
+  box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.15) !important;
+}
+
+
+/* ============================================================
+   UPLOAD ZONE
+   ============================================================ */
+div[data-testid="stFileUploader"] {
+  border: 2px dashed rgba(201, 168, 76, 0.3) !important;
+  border-radius: var(--radius) !important;
+  background: rgba(201, 168, 76, 0.02) !important;
+  transition: border-color 0.2s, background 0.2s !important;
+}
+
+div[data-testid="stFileUploader"]:hover {
+  border-color: var(--gold) !important;
+  background: rgba(201, 168, 76, 0.05) !important;
+}
+
+
+/* ============================================================
+   PRZYCISK GLOWNY (Generuj aukcje)
+   ============================================================ */
+.stButton > button[kind="primary"] {
+  background: linear-gradient(135deg, var(--gold) 0%, var(--gold-dim) 100%) !important;
+  color: var(--black) !important;
+  border: none !important;
+  border-radius: var(--radius-sm) !important;
+  font-family: var(--font) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  padding: 10px 24px !important;
+  box-shadow: 0 2px 8px rgba(201, 168, 76, 0.2) !important;
+  transition: box-shadow 0.2s, transform 0.15s !important;
+}
+
+.stButton > button[kind="primary"]:hover {
+  box-shadow: 0 4px 16px rgba(201, 168, 76, 0.3) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Secondary buttons - normalne, nie zlote */
+.stButton > button[kind="secondary"],
+.stDownloadButton > button {
+  background: var(--bg-card) !important;
+  color: var(--text) !important;
+  border: 1px solid rgba(0,0,0,0.12) !important;
+  border-radius: var(--radius-sm) !important;
+  font-family: var(--font) !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  transition: border-color 0.2s, box-shadow 0.2s !important;
+}
+
+.stButton > button[kind="secondary"]:hover,
+.stDownloadButton > button:hover {
+  border-color: var(--gold) !important;
+  box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.12) !important;
+}
+
+
+/* ============================================================
+   PROGRESS BAR
+   ============================================================ */
+.stProgress > div {
+  background: rgba(0,0,0,0.06) !important;
+  border-radius: 100px !important;
+  height: 4px !important;
+}
+
+.stProgress > div > div {
+  background: linear-gradient(90deg, var(--gold-dim), var(--gold), var(--gold-light)) !important;
+  border-radius: 100px !important;
+}
+
+
+/* ============================================================
+   WYNIKI (gz-results) - lekki styl
+   ============================================================ */
+.gz-results {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.gz-results-header {
+  background: var(--bg);
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+
+.gz-results-header h3 {
+  color: var(--text) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  margin: 0 !important;
+}
+
+.gz-results-badge {
+  background: var(--gold-subtle);
+  border: 1px solid var(--gold-border);
+  border-radius: 100px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gold-dim);
+}
+
+
+/* ============================================================
+   TAGI / BADGES
+   ============================================================ */
+.gz-tag {
+  display: inline-block;
+  border-radius: 100px;
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--gold-subtle);
+  border: 1px solid var(--gold-border);
+  color: var(--gold-dim);
+}
+
+.gz-tag--success {
+  background: rgba(45, 122, 79, 0.08);
+  border-color: rgba(45, 122, 79, 0.2);
+  color: var(--success);
+}
+
+
+/* ============================================================
+   EXPANDERY (opisy, parametry)
+   ============================================================ */
+[data-testid="stExpander"] {
+  background: var(--bg-card) !important;
+  border: 1px solid rgba(0,0,0,0.06) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: var(--shadow) !important;
+  margin-bottom: 8px !important;
+}
+
+[data-testid="stExpander"] svg {
+  color: var(--gold) !important;
+}
+
+
+/* ============================================================
+   ALERTY
+   ============================================================ */
+.stAlert {
+  border-radius: var(--radius-sm) !important;
+}
+
+
+/* ============================================================
+   STOPKA
+   ============================================================ */
+.gz-footer {
+  margin-top: 48px;
+  padding: 20px 0;
+  border-top: 1px solid rgba(0,0,0,0.06);
+  text-align: center;
+}
+
+.gz-footer p {
+  font-size: 12px !important;
+  color: var(--text-muted) !important;
+  margin: 0 !important;
+}
+
+.gz-footer span {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+
+/* ============================================================
+   IMAGE CAPTIONS
+   ============================================================ */
+.stImage p {
+  font-size: 12px !important;
+  color: var(--text-muted) !important;
+  text-align: center !important;
+}
+
+
+/* ============================================================
+   COLUMNS SPACING
+   ============================================================ */
+[data-testid="column"] {
+  padding: 0 8px !important;
+}
+
+
+/* ============================================================
+   ANIMACJE
+   ============================================================ */
+@keyframes pulse-gold {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(201,168,76,0.4); }
+  50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(201,168,76,0); }
+}
+
+
+/* ============================================================
+   BADGES WALIDACJI
+   ============================================================ */
+.gz-badge-ok {
+  display: inline-block;
+  background: rgba(45, 122, 79, 0.08);
+  border: 1px solid rgba(45, 122, 79, 0.25);
+  color: #2d7a4f;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font);
+  padding: 2px 10px;
+  border-radius: 100px;
+  margin-right: 6px;
+  margin-bottom: 4px;
+}
+
+.gz-badge-warn {
+  display: inline-block;
+  background: rgba(211, 153, 34, 0.08);
+  border: 1px solid rgba(211, 153, 34, 0.25);
+  color: #b8860b;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font);
+  padding: 2px 10px;
+  border-radius: 100px;
+  margin-right: 6px;
+  margin-bottom: 4px;
+}
+
+.gz-badge-error {
+  display: inline-block;
+  background: rgba(192, 57, 43, 0.08);
+  border: 1px solid rgba(192, 57, 43, 0.25);
+  color: #c0392b;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font);
+  padding: 2px 10px;
+  border-radius: 100px;
+  margin-right: 6px;
+  margin-bottom: 4px;
+}
+
+
+/* ============================================================
+   LICZNIK KOSZTOW API
+   ============================================================ */
+.gz-cost-counter {
+  background: var(--bg);
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+
+.gz-cost-counter b {
+  color: var(--text);
+}
+
+
+/* ============================================================
+   SEPARATOR (A14)
+   ============================================================ */
+.gz-separator {
+  border: none;
+  border-top: 1px solid rgba(0,0,0,0.06);
+  margin: 24px 0;
+}
+
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 768px) {
+  .gz-header {
+    padding: 24px 16px 20px;
+    margin: -1rem -1rem 20px;
+  }
+  .gz-header h1 {
+    font-size: 22px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gz-badge-dot { animation: none; }
+}

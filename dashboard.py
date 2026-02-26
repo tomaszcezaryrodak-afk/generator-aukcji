@@ -809,16 +809,16 @@ if generate_btn:
 
                 # Auto-uzupełnij pola jeśli puste
                 if extracted.get("waga_kg") and waga_kg == 0:
-                    waga_kg = extracted["waga_kg"]
+                    waga_kg = float(extracted["waga_kg"])
                     st.session_state["auto_waga_kg"] = waga_kg
                 if extracted.get("wysokosc_cm") and wysokosc_cm == 0:
-                    wysokosc_cm = extracted["wysokosc_cm"]
+                    wysokosc_cm = float(extracted["wysokosc_cm"])
                     st.session_state["auto_wysokosc_cm"] = wysokosc_cm
                 if extracted.get("szerokosc_cm") and szerokosc_cm == 0:
-                    szerokosc_cm = extracted["szerokosc_cm"]
+                    szerokosc_cm = float(extracted["szerokosc_cm"])
                     st.session_state["auto_szerokosc_cm"] = szerokosc_cm
                 if extracted.get("dlugosc_cm") and dlugosc_cm == 0:
-                    dlugosc_cm = extracted["dlugosc_cm"]
+                    dlugosc_cm = float(extracted["dlugosc_cm"])
                     st.session_state["auto_dlugosc_cm"] = dlugosc_cm
 
                 # Auto-kategoria

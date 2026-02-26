@@ -155,6 +155,14 @@ def get_image_prompts(kategoria, kolor_zlew="Czarny nakrapiany",
         "NEVER: text overlays, watermarks, plastic sheen on granite, blurry edges, "
         "floating objects, AI artifacts, distorted proportions, extra faucets or sinks."
     )
+    fidelity = (
+        "CRITICAL FIDELITY RULE: You are working with a REFERENCE PHOTO of the real product. "
+        "You MUST preserve the EXACT product structure from the reference image. "
+        "If the sink has a drainboard (ociekacz), the generated image MUST include the drainboard. "
+        "If the sink has two bowls, show two bowls. Do NOT simplify, remove parts, "
+        "change the number of bowls, or alter the product configuration in ANY way. "
+        "The product in the output MUST be structurally identical to the reference photo."
+    )
     material = (
         "MATERIAL ACCURACY: granite = matte stone texture with visible mineral speckles, "
         "NOT plastic, NOT ceramic gloss. Metal parts = realistic metallic reflections "
@@ -174,31 +182,31 @@ def get_image_prompts(kategoria, kolor_zlew="Czarny nakrapiany",
     if "zlew" in kat and "bateria" not in kat and "zestaw" not in kat:
         zestawy = [
             {"name": "Zlew (widok z gory)",
-             "prompt": f"Professional product photo of a {sink} kitchen sink. Top-down view. {studio} {quality} {material} {color_rule} {negative} {no_text}"},
+             "prompt": f"Professional product photo of a {sink} kitchen sink. Top-down view. {fidelity} {studio} {quality} {material} {color_rule} {negative} {no_text}"},
             {"name": "Zlew (kat 3/4)",
-             "prompt": f"Professional product photo of a {sink} kitchen sink from 3/4 angle showing depth. {studio} {quality} {material} {color_rule} {negative} {no_text}"},
+             "prompt": f"Professional product photo of a {sink} kitchen sink from 3/4 angle showing depth. {fidelity} {studio} {quality} {material} {color_rule} {negative} {no_text}"},
         ]
     elif "bateria" in kat and "zlew" not in kat and "zestaw" not in kat:
         zestawy = [
             {"name": "Bateria (frontalnie)",
-             "prompt": f"Professional product photo of a {accent} kitchen faucet. Front view, full height. {studio} {quality} {material} {negative} {no_text}"},
+             "prompt": f"Professional product photo of a {accent} kitchen faucet. Front view, full height. {fidelity} {studio} {quality} {material} {negative} {no_text}"},
             {"name": "Bateria (kat 3/4)",
-             "prompt": f"Professional product photo of a {accent} kitchen faucet from 3/4 angle. {studio} {quality} {material} {negative} {no_text}"},
+             "prompt": f"Professional product photo of a {accent} kitchen faucet from 3/4 angle. {fidelity} {studio} {quality} {material} {negative} {no_text}"},
         ]
     elif "syfon" in kat and "zestaw" not in kat:
         zestawy = [
             {"name": "Syfon (studio)",
-             "prompt": f"Professional product photo of a {siphon_metal} kitchen sink siphon/drain assembly. {studio} {quality} {material} {negative} {no_text}"},
+             "prompt": f"Professional product photo of a {siphon_metal} kitchen sink siphon/drain assembly. {fidelity} {studio} {quality} {material} {negative} {no_text}"},
         ]
     elif "dozownik" in kat and "zestaw" not in kat:
         zestawy = [
             {"name": "Dozownik (studio)",
-             "prompt": f"Professional product photo of a {dispenser_metal} built-in kitchen countertop soap dispenser. {studio} {quality} {material} {negative} {no_text}"},
+             "prompt": f"Professional product photo of a {dispenser_metal} built-in kitchen countertop soap dispenser. {fidelity} {studio} {quality} {material} {negative} {no_text}"},
         ]
     elif "akcesori" in kat:
         zestawy = [
             {"name": "Akcesorium (studio)",
-             "prompt": f"Professional product photo of this kitchen sink accessory. {studio} {quality} {negative} {no_text}"},
+             "prompt": f"Professional product photo of this kitchen sink accessory. {fidelity} {studio} {quality} {negative} {no_text}"},
         ]
     else:
         extras = ""
@@ -212,14 +220,14 @@ def get_image_prompts(kategoria, kolor_zlew="Czarny nakrapiany",
                  f"Create a professional product composition photo. "
                  f"Combine this {sink} kitchen sink and this {accent} kitchen faucet{extras} "
                  f"into one cohesive product set photo. The faucet mounted on the sink naturally. "
-                 f"Top-down view. {studio} {quality} {material} {color_rule} {negative} {no_text}"
+                 f"Top-down view. {fidelity} {studio} {quality} {material} {color_rule} {negative} {no_text}"
              )},
             {"name": "Kompozycja zestawu (kat 3/4)",
              "prompt": (
                  f"Create a professional product composition photo. "
                  f"Combine this {sink} kitchen sink and this {accent} kitchen faucet{extras} "
                  f"into one cohesive product set photo. The faucet mounted on the sink naturally. "
-                 f"3/4 angle view. {studio} {quality} {material} {color_rule} {negative} {no_text}"
+                 f"3/4 angle view. {fidelity} {studio} {quality} {material} {color_rule} {negative} {no_text}"
              )},
         ]
 
@@ -237,7 +245,7 @@ def get_image_prompts(kategoria, kolor_zlew="Czarny nakrapiany",
              "prompt": (
                  f"Show this {_acc_metal} kitchen accessory installed in a modern kitchen. "
                  f"Close-up, marble countertop, natural light, warm atmosphere. "
-                 f"Professional interior photography, 4K. {quality} {material} {color_rule} {negative} {no_text}"
+                 f"Professional interior photography, 4K. {fidelity} {quality} {material} {color_rule} {negative} {no_text}"
              )},
         ]
     else:
@@ -254,21 +262,21 @@ def get_image_prompts(kategoria, kolor_zlew="Czarny nakrapiany",
                  f"Bright marble or quartz countertop. Natural window light from the left. "
                  f"Small kitchen accessories nearby (olive oil bottle, herb pot, wooden cutting board). "
                  f"Warm, inviting atmosphere. Professional interior photography, 4K, shallow depth of field. "
-                 f"{quality} {material} {color_rule} {negative} {no_text}"
+                 f"{fidelity} {quality} {material} {color_rule} {negative} {no_text}"
              )},
             {"name": "Industrialna ciemna kuchnia",
              "prompt": (
                  f"Place this {product} into a photorealistic industrial style kitchen. "
                  f"Dark wood countertop, exposed brick wall, matte black fixtures, pendant Edison bulb. "
                  f"Moody atmosphere. Professional interior photography, 4K. "
-                 f"{quality} {material} {color_rule} {negative} {no_text}"
+                 f"{fidelity} {quality} {material} {color_rule} {negative} {no_text}"
              )},
             {"name": "Skandynawska kuchnia",
              "prompt": (
                  f"Place this {product} into a photorealistic scandinavian minimalist kitchen. "
                  f"Light oak countertop, white subway tiles, clean lines, lots of natural light. "
                  f"A small succulent plant nearby. Professional interior photography, 4K. "
-                 f"{quality} {material} {color_rule} {negative} {no_text}"
+                 f"{fidelity} {quality} {material} {color_rule} {negative} {no_text}"
              )},
             {"name": "Kuchnia rustykalna",
              "prompt": (
@@ -276,7 +284,7 @@ def get_image_prompts(kategoria, kolor_zlew="Czarny nakrapiany",
                  f"Warm wooden countertop, terracotta tiles, copper pots on wall hooks, "
                  f"fresh herbs in ceramic pots, warm golden light from window. "
                  f"Professional interior photography, 4K. "
-                 f"{quality} {material} {color_rule} {negative} {no_text}"
+                 f"{fidelity} {quality} {material} {color_rule} {negative} {no_text}"
              )},
             {"name": "Kuchnia premium ciemna",
              "prompt": (
@@ -284,7 +292,7 @@ def get_image_prompts(kategoria, kolor_zlew="Czarny nakrapiany",
                  f"Black marble countertop, dark matte cabinets, gold accent lighting, "
                  f"high-end appliances visible in background. Dramatic moody lighting. "
                  f"Professional interior photography, 4K. "
-                 f"{quality} {material} {color_rule} {negative} {no_text}"
+                 f"{fidelity} {quality} {material} {color_rule} {negative} {no_text}"
              )},
         ]
 
@@ -641,6 +649,7 @@ CRITICAL RULES:
 - Do not add any new objects or elements.
 - Do not change the camera angle, perspective, or framing.
 - Preserve the original color palette, shadows, and reflections.
+- PRODUCT FIDELITY: Preserve the EXACT product structure. If the sink has a drainboard, keep the drainboard. Do NOT simplify, remove parts, or change the product configuration.
 - The result should look like the same photo with one small change."""
 
     elif mode == "full":
@@ -651,6 +660,7 @@ INSTRUCTION: {instruction}
 RULES:
 - Generate a fresh composition based on the instruction and product context.
 - Use source/reference images for product accuracy (shape, color, proportions).
+- PRODUCT FIDELITY: Preserve the EXACT product structure from the reference. If the sink has a drainboard, include the drainboard. Do NOT simplify or remove parts.
 - New scene, lighting, and arrangement are allowed and encouraged.
 - Maintain professional e-commerce photography quality.
 - Follow all color consistency rules from the original prompt."""

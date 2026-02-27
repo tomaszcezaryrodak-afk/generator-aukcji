@@ -144,10 +144,12 @@ def get_image_prompts(kategoria, kolor_zlew="Czarny nakrapiany",
 
     no_text = "Do NOT add any text, labels, watermarks, or annotations to the image."
     color_rule = (
-        f"CRITICAL COLOR RULE: Faucet and its handle MUST be {accent}. "
-        f"Siphon drain ring visible in sink MUST be {siphon_metal}. "
-        f"Soap dispenser pump MUST be {dispenser_metal}. "
-        f"Each element has its own color finish - do NOT make them all the same."
+        f"CRITICAL COLOR RULE (follow strictly): "
+        f"The kitchen faucet body and handle MUST be {accent}, no other color. "
+        f"The siphon drain ring visible in the sink opening MUST be {siphon_metal}. "
+        f"The soap dispenser pump head MUST be {dispenser_metal}. "
+        f"The sink basin material MUST be {sink}. "
+        f"Each element has its own distinct color finish. Do NOT make all metal parts the same color."
     )
     studio = "White studio background, professional lighting, soft shadows. E-commerce product photography, high resolution."
     quality = "Crystal sharp focus, professional color grading, realistic material textures. Aspect ratio: 4:3 landscape (1200x900px)."
@@ -250,49 +252,86 @@ def get_image_prompts(kategoria, kolor_zlew="Czarny nakrapiany",
         ]
     else:
         product = f"{sink} kitchen sink with {accent} faucet"
-        if "zlew" in kat and "bateria" not in kat:
+        if "syfon" in kat:
+            product += f", {siphon_metal} siphon drain"
+        if "dozownik" in kat:
+            product += f", {dispenser_metal} soap dispenser"
+        if "zlew" in kat and "bateria" not in kat and "zestaw" not in kat:
             product = f"{sink} kitchen sink"
-        elif "bateria" in kat and "zlew" not in kat:
+        elif "bateria" in kat and "zlew" not in kat and "zestaw" not in kat:
             product = f"{accent} kitchen faucet"
 
         lifestyle = [
-            {"name": "Nowoczesna jasna kuchnia",
+            # --- Blat drewniany: 3 perspektywy ---
+            {"name": "Drewno · overhead (z gory)",
              "prompt": (
-                 f"Place this {product} into a photorealistic modern kitchen scene. "
-                 f"Bright marble or quartz countertop. Natural window light from the left. "
-                 f"Small kitchen accessories nearby (olive oil bottle, herb pot, wooden cutting board). "
-                 f"Warm, inviting atmosphere. Professional interior photography, 4K, shallow depth of field. "
-                 f"{fidelity} {quality} {material} {color_rule} {negative} {no_text}"
+                 f"{color_rule} "
+                 f"Top-down overhead view, bird's eye perspective. "
+                 f"Place this {product} into a photorealistic kitchen with a solid oak, beech or walnut wooden countertop "
+                 f"with visible wood grain. Full composition visible from above. "
+                 f"Everyday details on the counter: a coffee mug, fresh herbs in a small pot, "
+                 f"a wooden cutting board with sliced bread, a linen dish towel folded nearby. "
+                 f"Photojournalistic editorial kitchen photography style. Realistic imperfections, lived-in kitchen, "
+                 f"natural daylight, real photograph not a 3D render. Warm neutral color temperature. "
+                 f"{fidelity} {quality} {material} {negative} {no_text}"
              )},
-            {"name": "Industrialna ciemna kuchnia",
+            {"name": "Drewno · frontal (z boku)",
              "prompt": (
-                 f"Place this {product} into a photorealistic industrial style kitchen. "
-                 f"Dark wood countertop, exposed brick wall, matte black fixtures, pendant Edison bulb. "
-                 f"Moody atmosphere. Professional interior photography, 4K. "
-                 f"{fidelity} {quality} {material} {color_rule} {negative} {no_text}"
+                 f"{color_rule} "
+                 f"Eye-level front view, straight-on perspective. "
+                 f"Place this {product} into a photorealistic kitchen with a solid oak, beech or walnut wooden countertop "
+                 f"with visible wood grain. Sink as the central focal point. "
+                 f"A window behind the sink with natural daylight streaming through. "
+                 f"A linen dish towel draped on the countertop edge, spice jars on the side. "
+                 f"Photojournalistic editorial kitchen photography style. Realistic imperfections, lived-in kitchen, "
+                 f"natural daylight, real photograph not a 3D render. Warm neutral color temperature. "
+                 f"{fidelity} {quality} {material} {negative} {no_text}"
              )},
-            {"name": "Skandynawska kuchnia",
+            {"name": "Drewno · close-up (detal)",
              "prompt": (
-                 f"Place this {product} into a photorealistic scandinavian minimalist kitchen. "
-                 f"Light oak countertop, white subway tiles, clean lines, lots of natural light. "
-                 f"A small succulent plant nearby. Professional interior photography, 4K. "
-                 f"{fidelity} {quality} {material} {color_rule} {negative} {no_text}"
+                 f"{color_rule} "
+                 f"Close-up macro detail shot, tight crop on sink and faucet. "
+                 f"Place this {product} into a photorealistic kitchen with a solid oak, beech or walnut wooden countertop. "
+                 f"Visible texture of granite sink basin and wood grain of the countertop in sharp focus. "
+                 f"A few water droplets on the sink surface, realistic signs of everyday use. "
+                 f"Photojournalistic editorial kitchen photography style. Realistic imperfections, lived-in kitchen, "
+                 f"natural daylight, real photograph not a 3D render. Warm neutral color temperature. "
+                 f"{fidelity} {quality} {material} {negative} {no_text}"
              )},
-            {"name": "Kuchnia rustykalna",
+            # --- Blat granitowy: 3 perspektywy ---
+            {"name": "Granit · overhead (z gory)",
              "prompt": (
-                 f"Place this {product} into a photorealistic rustic farmhouse kitchen. "
-                 f"Warm wooden countertop, terracotta tiles, copper pots on wall hooks, "
-                 f"fresh herbs in ceramic pots, warm golden light from window. "
-                 f"Professional interior photography, 4K. "
-                 f"{fidelity} {quality} {material} {color_rule} {negative} {no_text}"
+                 f"{color_rule} "
+                 f"Top-down overhead view, bird's eye perspective. "
+                 f"Place this {product} into a photorealistic kitchen with a granite countertop (NOT marble). "
+                 f"Full composition visible from above. "
+                 f"Everyday details on the counter: a bowl of fresh fruit, a glass of water, "
+                 f"a cookbook open on the side, a small ceramic dish with lemons. "
+                 f"Photojournalistic editorial kitchen photography style. Realistic imperfections, lived-in kitchen, "
+                 f"natural daylight, real photograph not a 3D render. Neutral color temperature. "
+                 f"{fidelity} {quality} {material} {negative} {no_text}"
              )},
-            {"name": "Kuchnia premium ciemna",
+            {"name": "Granit · frontal (z boku)",
              "prompt": (
-                 f"Place this {product} into a photorealistic luxury dark kitchen. "
-                 f"Black marble countertop, dark matte cabinets, gold accent lighting, "
-                 f"high-end appliances visible in background. Dramatic moody lighting. "
-                 f"Professional interior photography, 4K. "
-                 f"{fidelity} {quality} {material} {color_rule} {negative} {no_text}"
+                 f"{color_rule} "
+                 f"Eye-level front view, straight-on perspective. "
+                 f"Place this {product} into a photorealistic kitchen with a granite countertop (NOT marble). "
+                 f"Sink as the central focal point. "
+                 f"Small succulents in ceramic pots on the side, neutral soft light from a side window. "
+                 f"Photojournalistic editorial kitchen photography style. Realistic imperfections, lived-in kitchen, "
+                 f"natural daylight, real photograph not a 3D render. Neutral color temperature. "
+                 f"{fidelity} {quality} {material} {negative} {no_text}"
+             )},
+            {"name": "Granit · close-up (detal)",
+             "prompt": (
+                 f"{color_rule} "
+                 f"Close-up macro detail shot, tight crop on sink and faucet. "
+                 f"Place this {product} into a photorealistic kitchen with a granite countertop (NOT marble). "
+                 f"Visible texture of granite countertop and granite sink basin in sharp focus. "
+                 f"Realistic details: a few water droplets, faint soap residue near the drain. "
+                 f"Photojournalistic editorial kitchen photography style. Realistic imperfections, lived-in kitchen, "
+                 f"natural daylight, real photograph not a 3D render. Neutral color temperature. "
+                 f"{fidelity} {quality} {material} {negative} {no_text}"
              )},
         ]
 
@@ -634,6 +673,8 @@ def get_regen_prompt(mode: str, instruction: str, product_context: str = "") -> 
     instruction: co zmienić (od użytkownika)
     product_context: kontekst produktu (kategoria, kolor)
     """
+    instruction = instruction[:500]
+    instruction = re.sub(r'[<>{}]', '', instruction)
     context_block = ""
     if product_context:
         context_block = f"\nPRODUCT CONTEXT: {product_context}\n"
@@ -778,4 +819,24 @@ if __name__ == "__main__":
     assert "Napisz nowy opis" in rev_prompt3
     print("get_description_revision_prompt (pusty HTML): OK")
 
-    print(f"\nALL TESTS PASSED ({8} tests)")
+    # FIX-10/11/12: Test propagacji kolorów
+    from catalogs import get_kolory_per_element
+    kpe = get_kolory_per_element("granitowe_zlewy")
+    assert "Szary" in kpe["kolor_syfon_widoczny"], "Brak Szary w syfonie"
+    assert "Szara" in kpe["kolor_bateria"], "Brak Szara w baterii"
+    assert "Stalowa" in kpe["kolor_bateria"], "Brak Stalowa w baterii"
+    print("FIX-10/11: nowe kolory: OK")
+
+    # FIX-12: beech w lifestyle
+    z, l = get_image_prompts("Zestaw (zlew + bateria + syfon)", catalog_name="granitowe_zlewy")
+    beech_count = sum(1 for p in l if "beech" in p["prompt"])
+    assert beech_count >= 3, f"beech w {beech_count}/3 promptach drewnianych"
+    print(f"FIX-12: beech w lifestyle: OK ({beech_count} promptów)")
+
+    # FIX-08: sanityzacja regen
+    regen_test = get_regen_prompt("edit", "<script>alert('xss')</script>" + "a" * 600, "test")
+    assert "<script>" not in regen_test, "XSS w regen prompt"
+    assert len(regen_test) < 2000, "Prompt za długi po sanityzacji"
+    print("FIX-08: sanityzacja regen: OK")
+
+    print(f"\nALL TESTS PASSED ({11} tests)")

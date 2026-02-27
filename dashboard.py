@@ -408,7 +408,11 @@ def render_bl_push_section(sections, all_results, timestamp,
                             # B5: deduplikacja SKU
                             existing_id = check_sku_exists(bl_token, inv_id, product_sku)
                             if existing_id:
-                                st.warning(f"Produkt z SKU '{product_sku}' już istnieje w BaseLinker (ID: {existing_id}). Nadpisuję.")
+                                st.warning(f"Produkt z SKU '{product_sku}' już istnieje w BaseLinker (ID: {existing_id}).")
+                                overwrite_key = f"bl_overwrite_{key_suffix}"
+                                overwrite = st.checkbox("Potwierdzam nadpisanie istniejącego produktu", key=overwrite_key)
+                                if not overwrite:
+                                    st.stop()
 
                             bl_result = send_to_baselinker(
                                 token=bl_token,
@@ -417,7 +421,7 @@ def render_bl_push_section(sections, all_results, timestamp,
                                 warehouse_id=wh_id,
                                 name=product_name,
                                 description_html=product_desc,
-                                images_dict=all_results,
+                                images_dict={k: v for k, v in all_results.items() if not k.startswith("zdjecie_oryginalne_")},
                                 price=cena_brutto,
                                 sku=product_sku,
                                 stock=stan_magazyn,
@@ -772,7 +776,6 @@ if generate_btn:
     else:
             api_key = _get_secret("GEMINI_API_KEY")
             client = genai.Client(api_key=api_key)
-            st.session_state["api_calls_count"] += 1
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
             # B3: try/except per plik PIL
@@ -795,6 +798,7 @@ if generate_btn:
             with st.spinner("Analizuję specyfikację..."):
                 extracted = extract_spec_data(client, specyfikacja, pil_images)
                 st.session_state["text_gen_count"] += 1
+                st.session_state["api_calls_count"] += 1
 
                 # Auto-uzupełnij pola jeśli puste
                 if extracted.get("waga_kg") and waga_kg == 0:
@@ -881,6 +885,7 @@ if generate_btn:
                         key = f"packshot_{i+1}_{timestamp}"
                         all_results[key] = result
                         st.session_state["image_gen_count"] += 1
+                        st.session_state["api_calls_count"] += 1
                 except Exception as e:
                     st.warning(f"{prompt_cfg['name']}: {get_user_error(e)}")
 
@@ -896,6 +901,7 @@ if generate_btn:
                         key = f"lifestyle_{i+1}_{timestamp}"
                         all_results[key] = result
                         st.session_state["image_gen_count"] += 1
+                        st.session_state["api_calls_count"] += 1
                 except Exception as e:
                     st.warning(f"{prompt_cfg['name']}: {get_user_error(e)}")
 
@@ -924,6 +930,7 @@ if generate_btn:
                         if part.text:
                             desc_text += part.text
                     st.session_state["text_gen_count"] += 1
+                    st.session_state["api_calls_count"] += 1
             except Exception as e:
                 st.warning(f"Opis: {get_user_error(e)}")
 

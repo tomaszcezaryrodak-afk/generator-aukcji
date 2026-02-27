@@ -1,15 +1,18 @@
 """
-Historia generowan aukcji.
+Historia generowan aukcji + system szkicow aukcji.
 
 Zapisuje i odczytuje generowane aukcje w formacie JSON Lines.
+System szkicow: pelne dane aukcji (grafiki base64, opis, specyfikacja) w osobnych JSON.
 """
 
 import json
+import re
 from pathlib import Path
 from datetime import datetime
 
 HISTORY_DIR = Path(__file__).parent / "output"
 HISTORY_FILE = HISTORY_DIR / "generations.jsonl"
+AUCTION_DIR = HISTORY_DIR / "history"
 MAX_ENTRIES = 500
 
 
@@ -89,3 +92,82 @@ def cleanup_old_outputs(output_dir, max_files=50):
             oldest.unlink()
         except OSError:
             pass
+
+
+# ---------------------------------------------------------------------------
+# System szkicow aukcji (pelne dane z grafikami)
+# ---------------------------------------------------------------------------
+
+def _make_auction_id(kategoria: str) -> str:
+    """Tworzy ID aukcji: data_godzina_slug."""
+    now = datetime.now()
+    slug = re.sub(r'[^\w]+', '-', kategoria.lower())[:30].strip('-')
+    return f"{now.strftime('%Y-%m-%d_%H%M%S')}_{slug}"
+
+
+def save_auction(data: dict, status: str = "szkic", auction_id: str | None = None) -> str:
+    """Zapisuje aukcje do historii. Zwraca ID.
+
+    data: dict z kluczami: kategoria, kolory, grafiki (base64), opis, specyfikacja.
+    status: 'szkic' lub 'wysłany'.
+    auction_id: opcjonalny ID do nadpisania (upsert). None = nowy wpis.
+    """
+    AUCTION_DIR.mkdir(parents=True, exist_ok=True)
+    if auction_id is None:
+        kategoria = data.get("kategoria", "produkt")
+        auction_id = _make_auction_id(kategoria)
+
+    auction = {
+        "id": auction_id,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": status,
+        **data,
+    }
+
+    path = AUCTION_DIR / f"{auction_id}.json"
+    path.write_text(json.dumps(auction, ensure_ascii=False, indent=2), encoding="utf-8")
+    return auction_id
+
+
+def load_auction(auction_id: str) -> dict:
+    """Wczytuje aukcje z historii. Zwraca dict lub pusty dict."""
+    path = AUCTION_DIR / f"{auction_id}.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def list_auctions() -> list:
+    """Lista aukcji (id, created_at, kategoria, status). Sortowane od najnowszej."""
+    if not AUCTION_DIR.exists():
+        return []
+    auctions = []
+    for path in AUCTION_DIR.glob("*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            auctions.append({
+                "id": data.get("id", path.stem),
+                "created_at": data.get("created_at", ""),
+                "kategoria": data.get("kategoria", ""),
+                "status": data.get("status", "szkic"),
+            })
+        except (json.JSONDecodeError, OSError):
+            continue
+    auctions.sort(key=lambda a: a["created_at"], reverse=True)
+    return auctions
+
+
+def update_auction_status(auction_id: str, status: str):
+    """Zmienia status aukcji (szkic / wysłany)."""
+    path = AUCTION_DIR / f"{auction_id}.json"
+    if not path.exists():
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["status"] = status
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except (json.JSONDecodeError, OSError):
+        pass

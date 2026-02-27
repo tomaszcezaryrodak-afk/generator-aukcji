@@ -43,7 +43,8 @@ from prompts import (
 )
 from baselinker import send_to_baselinker, check_sku_exists
 from extraction import extract_spec_data
-from history import save_generation, load_history, cleanup_old_outputs
+from history import save_generation, load_history, cleanup_old_outputs, save_auction, load_auction, list_auctions
+from chat_ui import render_image_chat, render_desc_chat
 
 try:
     from prompts import get_regen_prompt
@@ -58,6 +59,11 @@ except ImportError:
 BASE_DIR = Path(__file__).parent
 OUTPUT_DIR = BASE_DIR / "output"
 
+# Cennik API Gemini (gemini-3-pro-image-preview) - aktualizacja 27.02.2026
+USD_TO_PLN = 4.10
+COST_PER_IMAGE_USD = 0.134  # Potwierdzone ai.google.dev/pricing
+COST_PER_TEXT_CALL_EST = 0.02  # Szacunek per opis/ekstrakcja (~2k tokenów)
+
 # ---------------------------------------------------------------------------
 # Styl strony
 # ---------------------------------------------------------------------------
@@ -66,8 +72,36 @@ st.set_page_config(
     page_title="Generator Aukcji · GranitoweZlewy",
     page_icon="◆",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="auto",
 )
+
+# ---------------------------------------------------------------------------
+# Sidebar: Historia aukcji (szkice)
+# ---------------------------------------------------------------------------
+
+with st.sidebar:
+    st.markdown("### Historia aukcji")
+    _auctions = list_auctions()
+    if _auctions:
+        for _a in _auctions[:20]:
+            _icon = "\U0001f4dd" if _a["status"] == "szkic" else "\u2705"
+            _label = f"{_icon} {_a['created_at'][:10]} \u00b7 {_a['kategoria'][:25]}"
+            if st.button(_label, key=f"hist_{_a['id']}"):
+                st.session_state["loaded_auction"] = load_auction(_a["id"])
+                st.rerun()
+    else:
+        st.caption("Brak zapisanych aukcji.")
+    st.divider()
+    if st.button("\u2795 Nowa aukcja"):
+        for _k in list(st.session_state.keys()):
+            if _k.startswith(("packshot_", "lifestyle_", "desc_", "chat_", "loaded_auction",
+                              "last_results", "last_sections", "last_desc_raw", "last_timestamp",
+                              "last_extraction", "last_kolory", "last_catalog", "last_kategoria",
+                              "source_images", "auto_", "description_revisions", "regen_",
+                              "bl_confirm_", "suggested_category", "last_auto_draft_id",
+                              "img_chat_")):
+                del st.session_state[_k]
+        st.rerun()
 
 _css_path = BASE_DIR / "dashboard_styles.css"
 if _css_path.exists():
@@ -130,6 +164,10 @@ if not _get_secret("GEMINI_API_KEY"):
 
 if "api_calls_count" not in st.session_state:
     st.session_state["api_calls_count"] = 0
+if "image_gen_count" not in st.session_state:
+    st.session_state["image_gen_count"] = 0
+if "text_gen_count" not in st.session_state:
+    st.session_state["text_gen_count"] = 0
 
 # ---------------------------------------------------------------------------
 # Naglowek
@@ -152,8 +190,11 @@ MAX_REGEN_PER_SESSION = 10
 
 api_count = st.session_state.get("api_calls_count", 0)
 if api_count > 0:
-    estimated_cost_pln = api_count * 4.05 * 0.25
-    st.markdown(f'<div class="gz-cost-counter">Wywołania API: <b>{api_count}/{MAX_API_CALLS_PER_SESSION}</b> · Szacunkowy koszt: <b>~{estimated_cost_pln:.0f} zł</b></div>', unsafe_allow_html=True)
+    image_cost = st.session_state.get("image_gen_count", 0) * COST_PER_IMAGE_USD
+    text_cost = st.session_state.get("text_gen_count", 0) * COST_PER_TEXT_CALL_EST
+    total_cost_usd = image_cost + text_cost
+    total_cost_pln = total_cost_usd * USD_TO_PLN
+    st.markdown(f'<div class="gz-cost-counter">Wywołania API: <b>{api_count}/{MAX_API_CALLS_PER_SESSION}</b> · Szacunkowy koszt: <b>{total_cost_pln:.2f} zł</b></div>', unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -262,8 +303,8 @@ def render_bl_push_section(sections, all_results, timestamp,
                             cena_brutto, stan_magazyn, ean_code,
                             waga_kg, wysokosc_cm, szerokosc_cm, dlugosc_cm,
                             catalog_name, kategoria, key_suffix=""):
-    """Renderuje sekcje ZIP + BaseLinker push (deduplikacja)."""
-    col_zip, col_bl = st.columns(2)
+    """Renderuje sekcje ZIP + BaseLinker push + Zapisz szkic (deduplikacja)."""
+    col_zip, col_bl, col_draft = st.columns(3)
 
     with col_zip:
         zip_path = OUTPUT_DIR / f"aukcja_{timestamp}.zip"
@@ -289,10 +330,14 @@ def render_bl_push_section(sections, all_results, timestamp,
             product_desc = sections.get("opis") or desc_text
             product_sku = sections.get("sku") or f"GZ-{timestamp}"
 
-            # Walidacja przed pushem
-            bl_warnings = []
+            # FIX-02: Hard stop dla ceny 0 zł
+            bl_blockers = []
             if cena_brutto == 0:
-                bl_warnings.append("Cena = 0.00 zł")
+                bl_blockers.append("Cena = 0.00 zł")
+            if bl_blockers:
+                st.error(f"BLOKADA: {', '.join(bl_blockers)}. Ustaw cenę > 0 przed wysyłką.")
+
+            bl_warnings = []
             if not product_name or product_name.startswith("Produkt "):
                 bl_warnings.append("Brak tytułu")
             if waga_kg == 0:
@@ -309,24 +354,56 @@ def render_bl_push_section(sections, all_results, timestamp,
                 st.markdown(f"**Waga:** {waga_kg} kg · **Wymiary:** {szerokosc_cm}x{dlugosc_cm}x{wysokosc_cm} cm")
                 st.markdown(f"**Grafik:** {len(all_results)} · **Katalog:** {catalog_name}")
 
+            with st.expander("Ustawienia BaseLinker", expanded=False):
+                _exp_inv_id = st.number_input(
+                    "Inventory ID",
+                    value=int(_get_secret("BASELINKER_INVENTORY_ID", "8075")),
+                    key=f"bl_inv_id_{key_suffix}",
+                )
+                _exp_pg_id = st.number_input(
+                    "Price Group ID",
+                    value=int(_get_secret("BASELINKER_PRICE_GROUP_ID", "3778")),
+                    key=f"bl_price_group_id_{key_suffix}",
+                )
+                _exp_wh_id = st.text_input(
+                    "Warehouse ID",
+                    value=_get_secret("BASELINKER_WAREHOUSE_ID", "bl_5255"),
+                    key=f"bl_warehouse_id_{key_suffix}",
+                )
+                if st.button("Testuj połączenie", key=f"bl_test_{key_suffix}"):
+                    try:
+                        from baselinker import bl_request
+                        result = bl_request("getInventoryProductsList", {"inventory_id": _exp_inv_id}, bl_token)
+                        st.success("Połączenie OK. Znaleziono produkty w katalogu.")
+                    except Exception as e:
+                        st.error(f"Błąd: {e}")
+
             # A5: BL confirm dialog (dwuetapowy)
             confirm_key = f"bl_confirm_{key_suffix}"
             if not st.session_state.get(confirm_key):
                 # A4: type secondary
                 if st.button("Wyślij do BaseLinker", use_container_width=True, type="secondary",
                              key=f"bl_push_{key_suffix}"):
-                    st.session_state[confirm_key] = True
-                    st.rerun()
+                    if cena_brutto == 0:
+                        st.error("Cena = 0.00 zł. Ustaw cenę > 0 przed wysyłką do BaseLinker.")
+                    else:
+                        st.session_state[confirm_key] = True
+                        st.rerun()
             else:
                 product_name_short = (sections.get("tytul") or "produkt")[:40]
                 st.warning(f"Wysłać '{product_name_short}' do BaseLinker?")
                 col_yes, col_no = st.columns(2)
                 with col_yes:
                     if st.button("Tak, wyślij", key=f"bl_yes_{key_suffix}", type="primary"):
+                        inv_id = st.session_state.get(f"bl_inv_id_{key_suffix}", int(_get_secret("BASELINKER_INVENTORY_ID", "8075")))
+                        pg_id = st.session_state.get(f"bl_price_group_id_{key_suffix}", int(_get_secret("BASELINKER_PRICE_GROUP_ID", "3778")))
+                        wh_id = st.session_state.get(f"bl_warehouse_id_{key_suffix}", _get_secret("BASELINKER_WAREHOUSE_ID", "bl_5255"))
+
+                        if inv_id == 0 or not bl_token:
+                            st.error("Uzupełnij Inventory ID i token API w Ustawieniach BaseLinker powyżej.")
+                            st.stop()
+
                         try:
-                            inv_id = int(_get_secret("BASELINKER_INVENTORY_ID", "8075"))
-                            pg_id = int(_get_secret("BASELINKER_PRICE_GROUP_ID", "3778"))
-                            wh_id = _get_secret("BASELINKER_WAREHOUSE_ID", "bl_5255")
 
                             # B5: deduplikacja SKU
                             existing_id = check_sku_exists(bl_token, inv_id, product_sku)
@@ -364,144 +441,37 @@ def render_bl_push_section(sections, all_results, timestamp,
         else:
             st.info("Ustaw BASELINKER_TOKEN w .env")
 
-
-def render_description_chat():
-    """Sekcja czatu do poprawek opisu aukcji."""
-    sections = st.session_state.get("last_sections", {})
-    desc_text = st.session_state.get("last_desc_raw", "")
-
-    if not desc_text or not sections.get("opis"):
-        return
-
-    # Inicjalizacja
-    if "description_revisions" not in st.session_state:
-        st.session_state["description_revisions"] = []
-
-    MAX_REVISIONS = 5
-    current_count = len(st.session_state["description_revisions"])
-
-    st.markdown("#### Popraw opis")
-
-    if current_count >= MAX_REVISIONS:
-        st.warning(f"Osiągnąłeś limit {MAX_REVISIONS} poprawek. Wygeneruj opis od nowa.")
-        if st.session_state["description_revisions"]:
-            with st.expander(f"Historia poprawek ({current_count})"):
-                for i, rev in enumerate(st.session_state["description_revisions"], 1):
-                    st.markdown(f"**{i}.** {rev['instruction']}  \n`{rev['timestamp']}`")
-        return
-
-    col_input, col_actions = st.columns([3, 1])
-    with col_input:
-        revision_instruction = st.text_area(
-            "Co zmienić w opisie?",
-            placeholder="np. Zmień nagłówek na bardziej sprzedażowy, Dodaj informację o gwarancji 5 lat, Skróć opis o połowę",
-            key="revision_instruction",
-            height=80,
-        )
-    with col_actions:
-        st.caption(f"Poprawka {current_count + 1}/{MAX_REVISIONS}")
-        is_processing = st.session_state.get("revision_processing", False)
-        revise_btn = st.button(
-            "Popraw opis",
-            key="revise_desc_btn",
-            use_container_width=True,
-            disabled=is_processing,
-        )
-        if current_count > 0:
-            undo_btn = st.button("Cofnij ostatnią", key="undo_revision_btn", use_container_width=True)
-        else:
-            undo_btn = False
-
-    # Historia poprawek
-    if st.session_state["description_revisions"]:
-        with st.expander(f"Historia poprawek ({current_count})"):
-            for i, rev in enumerate(st.session_state["description_revisions"], 1):
-                st.markdown(f"**{i}.** {rev['instruction']}  \n`{rev['timestamp']}`")
-
-    # Obsługa poprawki
-    if revise_btn and revision_instruction.strip():
-        _handle_revision(sections, revision_instruction)
-
-    # Obsługa cofnięcia
-    if undo_btn and st.session_state["description_revisions"]:
-        last = st.session_state["description_revisions"].pop()
-        st.session_state["last_sections"]["opis"] = last["previous_html"]
-        st.session_state["last_desc_raw"] = last["previous_html"]
-        st.rerun()
-
-
-def _handle_revision(sections, revision_instruction):
-    """Wysyła poprawkę opisu do Gemini i aktualizuje session_state."""
-    current_html = sections.get("opis", "") or st.session_state.get("last_desc_raw", "")
-    api_key = _get_secret("GEMINI_API_KEY")
-
-    if not api_key:
-        st.error("Brak klucza GEMINI_API_KEY.")
-        return
-
-    if st.session_state.get("api_calls_count", 0) >= MAX_API_CALLS_PER_SESSION:
-        st.error(f"Osiągnąłeś limit {MAX_API_CALLS_PER_SESSION} wywołań API w tej sesji.")
-        return
-
-    st.session_state["revision_processing"] = True
-
-    with st.spinner("Poprawiam opis..."):
-        try:
-            client = genai.Client(api_key=api_key)
-            revision_prompt = get_description_revision_prompt(current_html, revision_instruction)
-
-            response = client.models.generate_content(
-                model=MODEL,
-                contents=[revision_prompt],
-                config=types.GenerateContentConfig(response_modalities=["TEXT"]),
-            )
-
-            st.session_state["api_calls_count"] = st.session_state.get("api_calls_count", 0) + 1
-
-            if not response.parts:
-                st.warning("AI nie wygenerowało odpowiedzi. Spróbuj ponownie.")
-                st.session_state["revision_processing"] = False
-                return
-
-            new_desc = ""
-            for part in response.parts:
-                if part.text:
-                    new_desc += part.text
-
-            new_desc = new_desc.strip()
-
-            # Walidacja: czy Gemini zwrócił HTML
-            if "<h2" not in new_desc.lower() and "<p" not in new_desc.lower():
-                st.warning("AI nie zwróciło poprawnego HTML. Spróbuj inaczej sformułować polecenie.")
-                st.session_state["revision_processing"] = False
-                return
-
-            # Sanityzacja XSS
-            new_desc = sanitize_html(new_desc)
-
-            # Zapisz poprzednią wersję
-            st.session_state["description_revisions"].append({
-                "instruction": revision_instruction,
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "previous_html": current_html,
-            })
-
-            # Aktualizuj opis w session_state
-            st.session_state["last_sections"]["opis"] = new_desc
-            st.session_state["last_desc_raw"] = new_desc
-
-            # Sprawdź ban listę
-            found_banned = check_ban_list(new_desc)
-            if found_banned:
-                st.warning(f"Znaleziono {len(found_banned)} fraz z ban listy w poprawionym opisie: {', '.join(found_banned[:5])}")
-
-            st.session_state["revision_processing"] = False
-            st.rerun()
-
-        except Exception as e:
-            st.error(f"Poprawka opisu: {get_user_error(e)}")
-        finally:
-            st.session_state["revision_processing"] = False
+    with col_draft:
+        import base64 as _b64
+        if st.button("Zapisz jako szkic", key=f"save_draft_{key_suffix}", use_container_width=True):
+            desc_text_draft = sections.get("opis", "") or st.session_state.get("last_desc_raw", "")
+            last_kolory = st.session_state.get("last_kolory", {})
+            grafiki_b64 = {}
+            for k, img in all_results.items():
+                if k.startswith("zdjecie_oryginalne_"):
+                    continue
+                try:
+                    buf = io.BytesIO()
+                    img.save(buf, format="PNG")
+                    grafiki_b64[k] = _b64.b64encode(buf.getvalue()).decode()
+                except Exception:
+                    pass
+            auction_data = {
+                "kategoria": catalog_name + " / " + kategoria,
+                "kolory": last_kolory,
+                "grafiki": grafiki_b64,
+                "opis": desc_text_draft,
+                "specyfikacja": st.session_state.get("last_desc_raw", ""),
+                "tytul": sections.get("tytul", ""),
+                "sku": sections.get("sku", ""),
+                "bullets": sections.get("bullets", ""),
+            }
+            from history import save_auction as _save_auction
+            # FIX-01: upsert - nadpisz auto-save zamiast tworzyć duplikat
+            _draft_id = st.session_state.get("last_auto_draft_id")
+            aid = _save_auction(auction_data, status="szkic", auction_id=_draft_id)
+            st.session_state["last_auto_draft_id"] = aid
+            st.success(f"Zapisano szkic!")
 
 
 def validate_allegro_title(title):
@@ -561,6 +531,8 @@ def render_results_section(all_results, sections, desc_text):
                     label = key.rsplit("_", 1)[0].replace("-", " ").replace("_", " ")
                     st.markdown(f'<div class="gz-img-card"><span class="gz-img-num">{img_num}</span></div>', unsafe_allow_html=True)
                     st.image(all_results[key], caption=label, use_container_width=True)
+                    # Chat do edycji grafiki
+                    render_image_chat(key, "", all_results, "")
 
     if desc_text:
         # Opis aukcji w karcie
@@ -605,13 +577,12 @@ def render_results_section(all_results, sections, desc_text):
 
     # Licznik kosztów API
     if all_results:
-        images_count = len(all_results)
-        image_cost_usd = images_count * 0.134
-        desc_cost_usd = 0.05
-        total_usd = image_cost_usd + desc_cost_usd
-        total_pln = total_usd * 4.05
+        gen_count = len([k for k in all_results if not k.startswith("zdjecie_oryginalne_")])
+        image_cost_display = gen_count * COST_PER_IMAGE_USD * USD_TO_PLN
+        text_cost_display = st.session_state.get("text_gen_count", 0) * COST_PER_TEXT_CALL_EST * USD_TO_PLN
+        total_display = image_cost_display + text_cost_display
         st.markdown(f'''<div class="gz-cost-counter">
-Koszt API: {images_count} grafik x $0.134 + opis x $0.05 = <b>${total_usd:.2f}</b> (~{total_pln:.2f} zł)
+Koszt API: {gen_count} grafik x ${COST_PER_IMAGE_USD} + tekst = <b>{total_display:.2f} zł</b>
 </div>''', unsafe_allow_html=True)
 
 
@@ -823,6 +794,7 @@ if generate_btn:
             # Auto-ekstrakcja danych ze specyfikacji
             with st.spinner("Analizuję specyfikację..."):
                 extracted = extract_spec_data(client, specyfikacja, pil_images)
+                st.session_state["text_gen_count"] += 1
 
                 # Auto-uzupełnij pola jeśli puste
                 if extracted.get("waga_kg") and waga_kg == 0:
@@ -879,6 +851,9 @@ if generate_btn:
             # A12: status_msg placeholder
             status_msg = st.empty()
 
+            # FIX-03: beforeunload ochrona przed zamknięciem karty
+            st.components.v1.html('<script>window.onbeforeunload=function(){return true;};</script>', height=0)
+
             imgs_for_set = pil_images[:4] if len(pil_images) >= 2 else pil_images
 
             st.session_state["source_images"] = pil_images
@@ -905,6 +880,7 @@ if generate_btn:
                     if result:
                         key = f"packshot_{i+1}_{timestamp}"
                         all_results[key] = result
+                        st.session_state["image_gen_count"] += 1
                 except Exception as e:
                     st.warning(f"{prompt_cfg['name']}: {get_user_error(e)}")
 
@@ -919,6 +895,7 @@ if generate_btn:
                     if result:
                         key = f"lifestyle_{i+1}_{timestamp}"
                         all_results[key] = result
+                        st.session_state["image_gen_count"] += 1
                 except Exception as e:
                     st.warning(f"{prompt_cfg['name']}: {get_user_error(e)}")
 
@@ -946,12 +923,16 @@ if generate_btn:
                     for part in desc_response.parts:
                         if part.text:
                             desc_text += part.text
+                    st.session_state["text_gen_count"] += 1
             except Exception as e:
                 st.warning(f"Opis: {get_user_error(e)}")
 
             # A12: wyczyszczenie progress i status
             status_msg.empty()
             progress.empty()
+
+            # FIX-03: reset beforeunload po zakończeniu generowania
+            st.components.v1.html('<script>window.onbeforeunload=null;</script>', height=0)
 
             # --- Parsuj sekcje ---
             sections = parse_description_sections(desc_text)
@@ -991,6 +972,34 @@ if generate_btn:
                 images_count=len(all_results),
             )
 
+            # FIX-01: Auto-save szkicu (ochrona przed utratą danych po refresh/restart)
+            try:
+                import base64 as _b64_auto
+                _grafiki_b64 = {}
+                for _ak, _av in all_results.items():
+                    if _ak.startswith("zdjecie_oryginalne_"):
+                        continue
+                    try:
+                        _buf = io.BytesIO()
+                        _av.save(_buf, format="PNG")
+                        _grafiki_b64[_ak] = _b64_auto.b64encode(_buf.getvalue()).decode()
+                    except Exception:
+                        pass
+                _auto_data = {
+                    "kategoria": catalog_key + " / " + kategoria,
+                    "kolory": st.session_state.get("last_kolory", {}),
+                    "grafiki": _grafiki_b64,
+                    "opis": desc_text,
+                    "specyfikacja": specyfikacja,
+                    "tytul": sections.get("tytul", ""),
+                    "sku": sections.get("sku", ""),
+                    "bullets": sections.get("bullets", ""),
+                }
+                _auto_id = save_auction(_auto_data, status="szkic")
+                st.session_state["last_auto_draft_id"] = _auto_id
+            except Exception:
+                pass  # Auto-save nie blokuje flow
+
             # --- Wyniki ---
             render_results_section(all_results, sections, desc_text)
 
@@ -998,7 +1007,7 @@ if generate_btn:
             st.caption("Sprawdź wygenerowany opis przed publikacją. AI może zawierać nieścisłości w wymiarach lub parametrach.")
 
             # Czat do poprawek opisu
-            render_description_chat()
+            render_desc_chat(desc_text)
 
             # A10: usunięto zduplikowany expander JSON (inline feedback wystarczy)
 
@@ -1028,7 +1037,7 @@ else:
         st.caption("Sprawdź wygenerowany opis przed publikacją. AI może zawierać nieścisłości w wymiarach lub parametrach.")
 
         # Czat do poprawek opisu
-        render_description_chat()
+        render_desc_chat(desc_text)
 
         # --- Czat do poprawek grafik ---
         if "source_images" in st.session_state and GENAI_AVAILABLE:

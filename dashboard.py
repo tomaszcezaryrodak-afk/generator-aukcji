@@ -583,7 +583,7 @@ def render_results_section(all_results, sections, desc_text):
             # Badges walidacji
             checks = validate_allegro_title(tytul)
             badges_html = ' '.join(
-                f'<span class="gz-badge-{c["status"]}">{c["text"]}</span>'
+                f'<span class="gz-badge-{c["status"]}">{html_lib.escape(c["text"])}</span>'
                 for c in checks
             )
             st.markdown(f'<div style="margin-bottom:12px;">{badges_html}</div>', unsafe_allow_html=True)

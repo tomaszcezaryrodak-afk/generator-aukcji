@@ -128,13 +128,20 @@ def save_auction(data: dict, status: str = "szkic", auction_id: str | None = Non
     path = AUCTION_DIR / f"{auction_id}.json"
     path.write_text(json.dumps(auction, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # FIX-13: Append metadanych do index.jsonl
+    # FIX-13: Upsert metadanych w index.jsonl (usun stary wpis przed append)
     index_entry = {
         "id": auction_id,
         "created_at": auction["created_at"],
         "kategoria": data.get("kategoria", ""),
         "status": status,
     }
+    if INDEX_FILE.exists():
+        try:
+            lines = INDEX_FILE.read_text(encoding="utf-8").strip().split("\n")
+            lines = [l for l in lines if l.strip() and json.loads(l).get("id") != auction_id]
+            INDEX_FILE.write_text("\n".join(lines) + "\n" if lines else "", encoding="utf-8")
+        except (json.JSONDecodeError, OSError):
+            pass
     with open(INDEX_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(index_entry, ensure_ascii=False) + "\n")
 

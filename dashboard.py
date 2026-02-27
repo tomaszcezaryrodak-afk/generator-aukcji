@@ -17,6 +17,16 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 
+import logging
+from logging.handlers import RotatingFileHandler
+
+_log_dir = Path(__file__).parent / "output"
+_log_dir.mkdir(parents=True, exist_ok=True)
+_log_handler = RotatingFileHandler(_log_dir / "app.log", maxBytes=5*1024*1024, backupCount=3, encoding="utf-8")
+_log_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+logging.basicConfig(level=logging.INFO, handlers=[_log_handler])
+logger = logging.getLogger("generator_aukcji")
+
 import streamlit as st
 from dotenv import load_dotenv
 load_dotenv()
@@ -64,6 +74,9 @@ USD_TO_PLN = 4.10
 COST_PER_IMAGE_USD = 0.134  # Potwierdzone ai.google.dev/pricing
 COST_PER_TEXT_CALL_EST = 0.02  # Szacunek per opis/ekstrakcja (~2k tokenów)
 
+# FIX-14: Rate limiting Gemini API (sekundy między requestami)
+RATE_LIMIT_SEC = float(os.getenv("RATE_LIMIT_SEC", "2"))
+
 # ---------------------------------------------------------------------------
 # Styl strony
 # ---------------------------------------------------------------------------
@@ -92,6 +105,17 @@ with st.sidebar:
     else:
         st.caption("Brak zapisanych aukcji.")
     st.divider()
+    # FIX-16: Eksport historii
+    from history import export_all_auctions
+    _export_data = export_all_auctions()
+    if _export_data:
+        st.download_button(
+            "Eksportuj historię (ZIP)",
+            data=_export_data,
+            file_name=f"aukcje_backup_{datetime.now().strftime('%Y%m%d')}.zip",
+            mime="application/zip",
+            use_container_width=True,
+        )
     if st.button("\u2795 Nowa aukcja"):
         for _k in list(st.session_state.keys()):
             if _k.startswith(("packshot_", "lifestyle_", "desc_", "chat_", "loaded_auction",
@@ -267,6 +291,7 @@ def generate_image(client, prompt_text, images, task_name, progress_callback=Non
                     try:
                         img = PIL.Image.open(io.BytesIO(part.inline_data.data))
                         img.load()
+                        logger.info(f"Image generated: {task_name}")
                         return img
                     except Exception:
                         continue
@@ -274,6 +299,7 @@ def generate_image(client, prompt_text, images, task_name, progress_callback=Non
         except Exception as e:
             error_str = str(e)
             if attempt < 3 and any(code in error_str for code in ["429", "500", "503", "RESOURCE_EXHAUSTED"]):
+                logger.warning(f"Image retry {attempt}: {task_name} - {error_str[:100]}")
                 time.sleep(10 * attempt)
             else:
                 raise
@@ -359,16 +385,19 @@ def render_bl_push_section(sections, all_results, timestamp,
                     "Inventory ID",
                     value=int(_get_secret("BASELINKER_INVENTORY_ID", "8075")),
                     key=f"bl_inv_id_{key_suffix}",
+                    help="Panel BL > Asortym. > Katalogi > ID w URL",
                 )
                 _exp_pg_id = st.number_input(
                     "Price Group ID",
                     value=int(_get_secret("BASELINKER_PRICE_GROUP_ID", "3778")),
                     key=f"bl_price_group_id_{key_suffix}",
+                    help="Panel BL > Asortym. > Cenniki > ID cennika",
                 )
                 _exp_wh_id = st.text_input(
                     "Warehouse ID",
                     value=_get_secret("BASELINKER_WAREHOUSE_ID", "bl_5255"),
                     key=f"bl_warehouse_id_{key_suffix}",
+                    help="Panel BL > Magazyny > ID magazynu (format: bl_XXXX)",
                 )
                 if st.button("Testuj połączenie", key=f"bl_test_{key_suffix}"):
                     try:
@@ -469,6 +498,7 @@ def render_bl_push_section(sections, all_results, timestamp,
                 "tytul": sections.get("tytul", ""),
                 "sku": sections.get("sku", ""),
                 "bullets": sections.get("bullets", ""),
+                "description_revisions": st.session_state.get("description_revisions", []),
             }
             from history import save_auction as _save_auction
             # FIX-01: upsert - nadpisz auto-save zamiast tworzyć duplikat
@@ -886,7 +916,9 @@ if generate_btn:
                         all_results[key] = result
                         st.session_state["image_gen_count"] += 1
                         st.session_state["api_calls_count"] += 1
+                        time.sleep(RATE_LIMIT_SEC)  # FIX-14: rate limiting
                 except Exception as e:
+                    logger.error(f"Image failed: {prompt_cfg['name']} - {str(e)[:100]}")
                     st.warning(f"{prompt_cfg['name']}: {get_user_error(e)}")
 
             # --- Lifestyle ---
@@ -902,7 +934,9 @@ if generate_btn:
                         all_results[key] = result
                         st.session_state["image_gen_count"] += 1
                         st.session_state["api_calls_count"] += 1
+                        time.sleep(RATE_LIMIT_SEC)  # FIX-14: rate limiting
                 except Exception as e:
+                    logger.error(f"Image failed: {prompt_cfg['name']} - {str(e)[:100]}")
                     st.warning(f"{prompt_cfg['name']}: {get_user_error(e)}")
 
             status_msg.info(f"Krok {total_tasks}/{total_tasks}: Generowanie opisu Allegro...")
@@ -943,6 +977,9 @@ if generate_btn:
 
             # --- Parsuj sekcje ---
             sections = parse_description_sections(desc_text)
+
+            if desc_text:
+                logger.info(f"Description generated: {sections.get('tytul', 'N/A')[:50]}")
 
             # B1: Walidacja ban listy na pierwszym generowaniu
             if desc_text:

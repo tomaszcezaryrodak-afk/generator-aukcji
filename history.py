@@ -13,6 +13,7 @@ from datetime import datetime
 HISTORY_DIR = Path(__file__).parent / "output"
 HISTORY_FILE = HISTORY_DIR / "generations.jsonl"
 AUCTION_DIR = HISTORY_DIR / "history"
+INDEX_FILE = AUCTION_DIR / "index.jsonl"
 MAX_ENTRIES = 500
 
 
@@ -126,6 +127,17 @@ def save_auction(data: dict, status: str = "szkic", auction_id: str | None = Non
 
     path = AUCTION_DIR / f"{auction_id}.json"
     path.write_text(json.dumps(auction, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # FIX-13: Append metadanych do index.jsonl
+    index_entry = {
+        "id": auction_id,
+        "created_at": auction["created_at"],
+        "kategoria": data.get("kategoria", ""),
+        "status": status,
+    }
+    with open(INDEX_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(index_entry, ensure_ascii=False) + "\n")
+
     return auction_id
 
 
@@ -141,11 +153,77 @@ def load_auction(auction_id: str) -> dict:
 
 
 def list_auctions() -> list:
-    """Lista aukcji (id, created_at, kategoria, status). Sortowane od najnowszej."""
+    """Lista aukcji (id, created_at, kategoria, status). Sortowane od najnowszej.
+
+    FIX-13: Czyta z INDEX_FILE zamiast skanowania JSON-ów.
+    Fallback na pełny skan gdy index nie istnieje lub jest desynchronizowany.
+    """
+    if not AUCTION_DIR.exists():
+        return []
+
+    json_count = len(list(AUCTION_DIR.glob("*.json")))
+    if json_count == 0:
+        return []
+
+    # Próba odczytu z indeksu
+    if INDEX_FILE.exists():
+        auctions = []
+        for line in INDEX_FILE.read_text(encoding="utf-8").strip().split("\n"):
+            if not line.strip():
+                continue
+            try:
+                auctions.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        # Desync check: index ma mniej wpisów niż plików JSON
+        if len(auctions) >= json_count:
+            auctions.sort(key=lambda a: a.get("created_at", ""), reverse=True)
+            return auctions
+
+    # Fallback / rebuild: index brakuje lub desync
+    return _rebuild_index()
+
+
+def update_auction_status(auction_id: str, status: str):
+    """Zmienia status aukcji (szkic / wysłany). Aktualizuje też INDEX_FILE."""
+    path = AUCTION_DIR / f"{auction_id}.json"
+    if not path.exists():
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["status"] = status
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except (json.JSONDecodeError, OSError):
+        return
+
+    # FIX-13: Aktualizuj INDEX_FILE (przepisz linię z nowym statusem)
+    if INDEX_FILE.exists():
+        try:
+            lines = INDEX_FILE.read_text(encoding="utf-8").strip().split("\n")
+            updated_lines = []
+            for line in lines:
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if entry.get("id") == auction_id:
+                        entry["status"] = status
+                    updated_lines.append(json.dumps(entry, ensure_ascii=False))
+                except json.JSONDecodeError:
+                    updated_lines.append(line)
+            INDEX_FILE.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
+        except OSError:
+            pass
+
+
+def _rebuild_index() -> list:
+    """Skanuje JSON-y i odbudowuje INDEX_FILE. Zwraca listę aukcji (safety net)."""
     if not AUCTION_DIR.exists():
         return []
     auctions = []
     for path in AUCTION_DIR.glob("*.json"):
+        if path.name == "index.jsonl":
+            continue
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             auctions.append({
@@ -156,18 +234,28 @@ def list_auctions() -> list:
             })
         except (json.JSONDecodeError, OSError):
             continue
-    auctions.sort(key=lambda a: a["created_at"], reverse=True)
+    auctions.sort(key=lambda a: a.get("created_at", ""), reverse=True)
+    # Zapisz odbudowany index
+    try:
+        lines = [json.dumps(a, ensure_ascii=False) for a in auctions]
+        INDEX_FILE.write_text("\n".join(lines) + "\n" if lines else "", encoding="utf-8")
+    except OSError:
+        pass
     return auctions
 
 
-def update_auction_status(auction_id: str, status: str):
-    """Zmienia status aukcji (szkic / wysłany)."""
-    path = AUCTION_DIR / f"{auction_id}.json"
-    if not path.exists():
-        return
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        data["status"] = status
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    except (json.JSONDecodeError, OSError):
-        pass
+def export_all_auctions() -> bytes | None:
+    """Eksportuje wszystkie aukcje jako ZIP z JSON-ami. Zwraca bytes lub None."""
+    import io
+    import zipfile
+    if not AUCTION_DIR.exists():
+        return None
+    jsons = list(AUCTION_DIR.glob("*.json"))
+    if not jsons:
+        return None
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for path in jsons:
+            zf.write(path, f"aukcje/{path.name}")
+    buf.seek(0)
+    return buf.getvalue()

@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Lock } from 'lucide-react';
+// Lock icon removed - using GZ monogram instead
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 30_000;
@@ -56,13 +56,13 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-[radial-gradient(ellipse_at_top,oklch(0.95_0.02_75),oklch(0.97_0.012_85))]">
+      <Card className="w-full max-w-sm shadow-lg">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <Lock className="h-6 w-6 text-primary" />
+          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10">
+            <span className="text-xl font-bold tracking-tight text-primary">GZ</span>
           </div>
-          <CardTitle>Generator Aukcji</CardTitle>
+          <CardTitle className="text-lg">Generator Aukcji</CardTitle>
           <p className="text-sm text-muted-foreground">Granitowe Zlewy</p>
         </CardHeader>
         <CardContent>

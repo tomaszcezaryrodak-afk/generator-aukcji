@@ -24,6 +24,8 @@ from pathlib import Path
 import logging
 from logging.handlers import RotatingFileHandler
 
+import bcrypt
+
 from fastapi import FastAPI, Form, Request, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -176,10 +178,21 @@ def _validate_image_magic(content: bytes) -> bool:
     return False
 
 
+_SAFE_PATH_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
+
+
+def _validate_path_segment(segment: str, label: str = "parametr") -> None:
+    """Waliduje segment sciezki (job_id, key, auction_id). Rzuca 400 przy path traversal."""
+    if not segment or not _SAFE_PATH_RE.match(segment):
+        raise HTTPException(400, f"Nieprawidlowy {label}")
+
+
 def _sanitize_feedback(text: str) -> str:
-    """Usuwa tagi HTML/JS i ogranicza dlugosc feedbacku."""
-    text = re.sub(r'[<>{}]', '', text)
-    return text[:MAX_FEEDBACK_LENGTH]
+    """Usuwa tagi HTML/JS, prompt injection patterns i ogranicza dlugosc."""
+    text = re.sub(r'[<>{}\[\]]', '', text)
+    text = re.sub(r'(?i)(ignore|forget|disregard|override)\s+(all|previous|above|instructions)', '', text)
+    text = re.sub(r'(?i)(system|assistant|user)\s*:', '', text)
+    return text.strip()[:MAX_FEEDBACK_LENGTH]
 
 
 API_CALL_TIMEOUT_SEC = 120
@@ -449,7 +462,10 @@ def validate_allegro_title(title):
 
 
 def _session_cost_pln(session: SessionData) -> float:
-    """Oblicza szacunkowy koszt sesji w PLN."""
+    """Oblicza koszt sesji w PLN. Uzywa per-model trackingu jesli dostepny."""
+    if session.total_cost_usd > 0:
+        return session.total_cost_usd * USD_TO_PLN
+    # Fallback na estymacje (stare sesje bez _track_cost)
     image_cost = session.image_gen_count * COST_PER_IMAGE_USD
     text_cost = session.text_gen_count * COST_PER_TEXT_CALL_EST
     return (image_cost + text_cost) * USD_TO_PLN
@@ -528,9 +544,35 @@ app.add_middleware(
 )
 
 
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response as StarletteResponse
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Dodaje naglowki bezpieczenstwa do kazdej odpowiedzi."""
+
+    async def dispatch(self, request: Request, call_next):
+        response: StarletteResponse = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+
 # ---------------------------------------------------------------------------
 # Endpointy
 # ---------------------------------------------------------------------------
+
+
+def _verify_password(plain: str, stored: str) -> bool:
+    """Weryfikuje haslo. Obsluguje bcrypt hash ($2b$) i plain text (legacy)."""
+    if stored.startswith("$2b$") or stored.startswith("$2a$"):
+        return bcrypt.checkpw(plain.encode("utf-8"), stored.encode("utf-8"))
+    return hmac.compare_digest(plain, stored)
 
 
 @app.post("/api/auth")
@@ -549,7 +591,7 @@ async def auth(request: Request):
     if not app_password:
         raise HTTPException(503, "Serwer nie skonfigurowany. Ustaw APP_PASSWORD.")
 
-    if not hmac.compare_digest(password, app_password):
+    if not _verify_password(password, app_password):
         record_failed_login(ip)
         raise HTTPException(401, "Nieprawidlowe haslo")
 
@@ -984,13 +1026,21 @@ async def generate_stream(job_id: str, request: Request, ticket: str = Query("")
 @app.get("/api/images/{job_id}/{key}")
 async def get_image(job_id: str, key: str, session: SessionData = Depends(require_auth)):
     """Serwuje wygenerowany obraz."""
+    _validate_path_segment(job_id, "job_id")
+    _validate_path_segment(key, "key")
+
     # Szukaj w results_images
     file_path = session.results_images.get(key)
     if file_path and Path(file_path).exists():
-        return FileResponse(file_path, media_type="image/png")
+        resolved = Path(file_path).resolve()
+        if not str(resolved).startswith(str(BASE_DIR.resolve())):
+            raise HTTPException(403, "Niedozwolona sciezka")
+        return FileResponse(resolved, media_type="image/png")
 
     # Fallback: uploads/{job_id}/{key}.png
-    fallback = UPLOADS_DIR / job_id / f"{key}.png"
+    fallback = (UPLOADS_DIR / job_id / f"{key}.png").resolve()
+    if not str(fallback).startswith(str(UPLOADS_DIR.resolve())):
+        raise HTTPException(403, "Niedozwolona sciezka")
     if fallback.exists():
         return FileResponse(fallback, media_type="image/png")
 
@@ -1000,6 +1050,7 @@ async def get_image(job_id: str, key: str, session: SessionData = Depends(requir
 @app.get("/api/results/{job_id}")
 async def get_results(job_id: str, session: SessionData = Depends(require_auth)):
     """Zwraca wyniki generowania."""
+    _validate_path_segment(job_id, "job_id")
     if session.job_id != job_id:
         raise HTTPException(404, "Nieznany job_id")
 
@@ -1020,6 +1071,7 @@ async def get_results(job_id: str, session: SessionData = Depends(require_auth))
 @app.get("/api/results/{job_id}/zip")
 async def get_results_zip(job_id: str, session: SessionData = Depends(require_auth)):
     """Pobiera ZIP z grafikami i opisem."""
+    _validate_path_segment(job_id, "job_id")
     if session.job_id != job_id:
         raise HTTPException(404, "Nieznany job_id")
     if not session.results_images:
@@ -1045,7 +1097,7 @@ async def chat_image(request: Request, session: SessionData = Depends(require_au
     """Edycja grafiki przez czat (regeneracja Gemini)."""
     body = await request.json()
     image_key = body.get("image_key", "")
-    instruction = body.get("instruction", "").strip()
+    instruction = _sanitize_feedback(body.get("instruction", ""))
 
     if not image_key:
         raise HTTPException(400, "Brak image_key")
@@ -1092,6 +1144,10 @@ async def chat_image(request: Request, session: SessionData = Depends(require_au
         new_img = await asyncio.to_thread(generate_image, client, full_prompt, regen_images, f"Chat edit: {image_key}")
     except Exception as e:
         return {"success": False, "message": get_user_error(e)}
+    finally:
+        current_img.close()
+        for _si in source_imgs:
+            _si.close()
 
     if not new_img:
         return {"success": False, "message": "Gemini nie zwrocil obrazu. Sprobuj ponownie."}
@@ -1101,6 +1157,7 @@ async def chat_image(request: Request, session: SessionData = Depends(require_au
     job_dir.mkdir(parents=True, exist_ok=True)
     new_path = job_dir / f"{image_key}.png"
     new_img.save(str(new_path))
+    new_img.close()
     session.results_images[image_key] = str(new_path)
 
     session.regen_count += 1
@@ -1126,7 +1183,7 @@ async def chat_image(request: Request, session: SessionData = Depends(require_au
 async def chat_description(request: Request, session: SessionData = Depends(require_auth)):
     """Poprawka opisu aukcji przez czat lub reczna edycja HTML."""
     body = await request.json()
-    instruction = body.get("instruction", "").strip()
+    instruction = _sanitize_feedback(body.get("instruction", ""))
     manual_html = body.get("manual_html", "").strip()
 
     current_desc = session.results_sections.get("opis", "") or session.results_desc_raw
@@ -1325,6 +1382,9 @@ async def baselinker_push(request: Request, session: SessionData = Depends(requi
         return {"success": True, "product_id": product_id, "message": f"Wyslano do BaseLinker (ID: {product_id})"}
     except Exception as e:
         return {"success": False, "message": str(e)[:200]}
+    finally:
+        for _img in images_dict.values():
+            _img.close()
 
 
 @app.get("/api/history")
@@ -1374,6 +1434,7 @@ async def draft_save(request: Request, session: SessionData = Depends(require_au
 @app.get("/api/draft/{auction_id}")
 async def draft_load(auction_id: str, session: SessionData = Depends(require_auth)):
     """Laduje szkic aukcji."""
+    _validate_path_segment(auction_id, "auction_id")
     data = load_auction(auction_id)
     if not data:
         raise HTTPException(404, "Szkic nie znaleziony")
@@ -1604,6 +1665,8 @@ async def _run_generation(
     queue = session.sse_queue
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     session.results_timestamp = timestamp
+    pil_images: list = []
+    transparent_images: list = []
 
     def _check_cancel() -> bool:
         """Sprawdza czy uzytkownik anulował generowanie."""
@@ -2179,6 +2242,17 @@ async def _run_generation(
         await _send_event(queue, "error", {"message": get_user_error(e)})
 
     finally:
+        # Cleanup PIL images
+        for _img in pil_images:
+            try:
+                _img.close()
+            except Exception:
+                pass
+        for _img in transparent_images:
+            try:
+                _img.close()
+            except Exception:
+                pass
         # Signal koniec streamu
         if queue is not None:
             await queue.put(None)

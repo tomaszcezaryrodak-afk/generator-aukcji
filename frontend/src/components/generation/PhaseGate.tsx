@@ -110,8 +110,13 @@ export default function PhaseGate() {
             disabled={isSubmitting}
           >
             <CheckCircle className="h-5 w-5" />
-            Akceptuj {phaseLabel}
+            Akceptuj {phaseLabel.toLowerCase()} i przejdź dalej
           </Button>
+          {state.phaseRound >= 5 && (
+            <p className="text-center text-xs text-muted-foreground">
+              Pozostało {8 - state.phaseRound} {8 - state.phaseRound === 1 ? 'runda' : 'rundy'} poprawek
+            </p>
+          )}
 
           <div className="relative">
             <Textarea

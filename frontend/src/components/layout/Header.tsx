@@ -12,10 +12,13 @@ export default function Header() {
   const { state } = useWizard();
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
+    <header className="sticky top-0 z-50 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
         <div className="flex items-center gap-3">
-          <h1 className="text-base font-semibold">Generator Aukcji</h1>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+            <span className="text-sm font-bold tracking-tight text-primary">GZ</span>
+          </div>
+          <h1 className="text-base font-semibold tracking-wide">Generator Aukcji</h1>
           {state.totalCost > 0 && (
             <Badge
               variant="secondary"

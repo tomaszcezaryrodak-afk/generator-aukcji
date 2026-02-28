@@ -542,7 +542,8 @@ async def run_pipeline(
         best_differences = []
 
         for attempt in range(1 + MAX_RETRIES):
-            gen_img = generate_image(
+            gen_img = await asyncio.to_thread(
+                generate_image,
                 client,
                 prompt,
                 reference_images,

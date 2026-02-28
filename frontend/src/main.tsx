@@ -11,7 +11,7 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter basename="/app">
       <AuthProvider>
         <App />
-        <Toaster position="top-right" richColors closeButton />
+        <Toaster position="top-right" richColors closeButton toastOptions={{ style: { fontFamily: 'Inter, system-ui, sans-serif' } }} />
       </AuthProvider>
     </BrowserRouter>
   </StrictMode>,

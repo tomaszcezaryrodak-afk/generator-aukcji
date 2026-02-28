@@ -3,13 +3,13 @@ import { cn } from '@/lib/utils';
 import { Upload, Search, Palette, SlidersHorizontal, Wand2, CheckCircle } from 'lucide-react';
 import type { WizardStep } from '@/lib/types';
 
-const steps: { step: WizardStep; label: string; icon: React.ReactNode }[] = [
-  { step: 1, label: 'Zdjęcia', icon: <Upload className="h-4 w-4" /> },
-  { step: 2, label: 'Analiza', icon: <Search className="h-4 w-4" /> },
-  { step: 3, label: 'Kolory', icon: <Palette className="h-4 w-4" /> },
-  { step: 4, label: 'Cechy', icon: <SlidersHorizontal className="h-4 w-4" /> },
-  { step: 5, label: 'Generuj', icon: <Wand2 className="h-4 w-4" /> },
-  { step: 6, label: 'Wyniki', icon: <CheckCircle className="h-4 w-4" /> },
+const steps: { step: WizardStep; label: string; icon: React.ReactNode; shortLabel: string }[] = [
+  { step: 1, label: 'Zdjęcia', icon: <Upload className="h-4 w-4" />, shortLabel: '1' },
+  { step: 2, label: 'Analiza', icon: <Search className="h-4 w-4" />, shortLabel: '2' },
+  { step: 3, label: 'Kolory', icon: <Palette className="h-4 w-4" />, shortLabel: '3' },
+  { step: 4, label: 'Cechy', icon: <SlidersHorizontal className="h-4 w-4" />, shortLabel: '4' },
+  { step: 5, label: 'Generuj', icon: <Wand2 className="h-4 w-4" />, shortLabel: '5' },
+  { step: 6, label: 'Wyniki', icon: <CheckCircle className="h-4 w-4" />, shortLabel: '6' },
 ];
 
 export default function WizardStepper() {
@@ -39,13 +39,13 @@ export default function WizardStepper() {
               >
                 <span
                   className={cn(
-                    'flex h-7 w-7 items-center justify-center rounded-full text-xs',
+                    'flex h-8 w-8 items-center justify-center rounded-full text-xs transition-colors',
                     isCurrent && 'bg-primary text-white',
-                    isCompleted && 'bg-primary/20 text-primary',
-                    !isCurrent && !isCompleted && 'bg-muted/20 text-muted-foreground',
+                    isCompleted && 'bg-primary/15 text-primary',
+                    !isCurrent && !isCompleted && 'bg-muted/30 text-muted-foreground',
                   )}
                 >
-                  {isCompleted ? <CheckCircle className="h-3.5 w-3.5" /> : icon}
+                  {isCompleted ? <CheckCircle className="h-4 w-4" /> : icon}
                 </span>
                 <span className="hidden sm:inline">{label}</span>
               </button>
@@ -53,8 +53,8 @@ export default function WizardStepper() {
                 <div
                   aria-hidden="true"
                   className={cn(
-                    'mx-1 h-px w-6 sm:w-10',
-                    isCompleted ? 'bg-primary' : 'bg-border',
+                    'mx-1 h-[2px] flex-1 min-w-4 rounded-full transition-colors',
+                    isCompleted ? 'bg-primary/40' : 'bg-border',
                   )}
                 />
               )}

@@ -73,15 +73,21 @@ export default function Step6Results() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <Card>
+      <Card className="border-primary/20 bg-primary/3">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <CheckCircle className="h-5 w-5 text-primary" />
-            Wyniki generowania
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15">
+              <CheckCircle className="h-5 w-5 text-primary" />
+            </div>
+            Generowanie zakończone
           </CardTitle>
           {state.resultSections && (
-            <div className="space-y-1 pt-2">
-              <p className="text-sm font-medium">{state.resultSections.title}</p>
+            <div className="space-y-2 pt-3">
+              {state.resultSections.title && (
+                <div className="rounded-lg border border-border bg-card p-3">
+                  <p className="text-sm font-semibold">{state.resultSections.title}</p>
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">
                 Kategoria: {state.resultSections.category}
               </p>

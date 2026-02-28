@@ -39,14 +39,14 @@ export default function ImageGrid({ images, mainIndex, onRemove, onSetMain }: Im
           <Button
             variant="destructive"
             size="icon"
-            className="absolute right-0 top-0 h-10 w-10 opacity-100"
+            className="absolute right-1 top-1 h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
             onClick={(e) => {
               e.stopPropagation();
               onRemove(i);
             }}
             aria-label={`Usuń ${img.name}`}
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-3 w-3" />
           </Button>
         </div>
       ))}

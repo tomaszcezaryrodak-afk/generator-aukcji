@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { WizardProvider, useWizard } from '@/context/WizardContext';
 import Header from '@/components/layout/Header';
 import WizardStepper from '@/components/layout/WizardStepper';
@@ -37,6 +38,13 @@ function StepNavigation() {
   // Hide navigation during generation (step 5) and results (step 6)
   if (state.step >= 5) return null;
 
+  const proceed = canProceed();
+  const hintMap: Record<number, string> = {
+    1: 'Dodaj przynajmniej jedno zdjęcie',
+    2: 'Poczekaj na zakończenie analizy',
+    3: 'Potwierdź kolory produktu',
+  };
+
   return (
     <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-6">
       <Button
@@ -48,19 +56,36 @@ function StepNavigation() {
         <ChevronLeft className="h-4 w-4" />
         Wstecz
       </Button>
-      <Button
-        onClick={goNext}
-        disabled={!canProceed()}
-        className="gap-1"
-      >
-        Dalej
-        <ChevronRight className="h-4 w-4" />
-      </Button>
+      <div className="flex flex-col items-end gap-1">
+        <Button
+          onClick={goNext}
+          disabled={!proceed}
+          className="gap-1"
+        >
+          Dalej
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+        {!proceed && hintMap[state.step] && (
+          <p className="text-xs text-muted-foreground">{hintMap[state.step]}</p>
+        )}
+      </div>
     </div>
   );
 }
 
 function WizardLayout() {
+  const { state } = useWizard();
+
+  // Beforeunload guard during generation (UX P0)
+  useEffect(() => {
+    if (!state.isGenerating) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [state.isGenerating]);
+
   return (
     <div className="min-h-screen bg-background">
       <a

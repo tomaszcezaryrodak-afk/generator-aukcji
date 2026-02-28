@@ -50,8 +50,8 @@ export default function DropZone({ onFiles, accept = 'image/*', maxFiles = 20, d
   return (
     <div
       className={cn(
-        'relative flex min-h-[200px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors',
-        isDragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50',
+        'relative flex min-h-[200px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-all duration-200',
+        isDragOver ? 'border-primary bg-primary/5 scale-[1.01]' : 'border-border hover:border-primary/50',
         disabled && 'pointer-events-none opacity-50',
       )}
       onDragOver={(e) => {
@@ -71,10 +71,15 @@ export default function DropZone({ onFiles, accept = 'image/*', maxFiles = 20, d
       tabIndex={0}
       aria-label="Przeciągnij zdjęcia lub kliknij, aby wybrać"
     >
-      <Upload className="mb-3 h-10 w-10 text-muted-foreground" />
+      <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-primary/8">
+        <Upload className="h-6 w-6 text-primary" />
+      </div>
       <p className="text-sm font-medium">Przeciągnij zdjęcia tutaj</p>
       <p className="mt-1 text-xs text-muted-foreground">
         lub kliknij, aby wybrać (max {maxFiles} plików)
+      </p>
+      <p className="mt-2 text-[11px] text-muted-foreground/70">
+        JPG, PNG, WebP · max 10 MB na plik
       </p>
       <input
         ref={inputRef}

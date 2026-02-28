@@ -100,8 +100,10 @@ export default function ChatPanel({ mode, imageKey }: ChatPanelProps) {
           <div
             key={i}
             className={cn(
-              'rounded-lg px-3 py-2 text-sm',
-              msg.role === 'user' ? 'bg-primary/10 text-foreground' : 'bg-muted/10 text-muted-foreground',
+              'max-w-[85%] rounded-xl px-3 py-2 text-sm',
+              msg.role === 'user'
+                ? 'ml-auto bg-primary text-primary-foreground'
+                : 'mr-auto bg-muted/30 text-foreground',
             )}
           >
             {msg.content}

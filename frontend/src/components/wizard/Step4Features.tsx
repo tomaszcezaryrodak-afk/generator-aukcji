@@ -87,12 +87,16 @@ export default function Step4Features() {
         </div>
 
         {state.productDNA && (
-          <div className="mt-4 rounded-lg bg-muted/10 p-4">
-            <p className="mb-2 text-sm font-medium">Product DNA (podgląd)</p>
-            <pre className="max-h-48 overflow-auto text-xs text-muted-foreground">
-              {JSON.stringify(state.productDNA, null, 2)}
-            </pre>
-          </div>
+          <details className="mt-4 rounded-lg border border-border">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              Product DNA (dane techniczne)
+            </summary>
+            <div className="border-t border-border p-4">
+              <pre className="max-h-48 overflow-auto text-xs text-muted-foreground">
+                {JSON.stringify(state.productDNA, null, 2)}
+              </pre>
+            </div>
+          </details>
         )}
       </CardContent>
     </Card>

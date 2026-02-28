@@ -116,6 +116,19 @@ export default function Step5Generate() {
             {state.error}
           </div>
         )}
+
+        <div className="rounded-lg border border-border bg-muted/10 p-4 text-sm space-y-2">
+          <p className="font-medium text-foreground">Co zostanie wygenerowane:</p>
+          <ul className="space-y-1 text-muted-foreground">
+            <li>Packshoty na białym tle (kompozycja zestawu + indywidualne)</li>
+            <li>6 scen lifestyle (kuchnie, blaty drewniane i granitowe)</li>
+            <li>Opis SEO na Allegro</li>
+          </ul>
+          <p className="text-xs text-muted-foreground/70 pt-1">
+            Każda faza wymaga Twojej akceptacji przed kontynuacją
+          </p>
+        </div>
+
         <div className="flex gap-3">
           <Button
             variant="outline"

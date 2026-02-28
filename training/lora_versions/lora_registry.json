@@ -1,0 +1,13 @@
+{
+  "versions": [
+    {
+      "id": "v001",
+      "url": "https://v3b.fal.media/files/b/0a9037da/Gm73o30es3kXhAg3O9VxB_pytorch_lora_weights.safetensors",
+      "date": "2026-02-28T00:54:02.898484",
+      "steps": 1000,
+      "trigger_word": "granite_sink_premium",
+      "quality_gate": false
+    }
+  ],
+  "active": "v001"
+}

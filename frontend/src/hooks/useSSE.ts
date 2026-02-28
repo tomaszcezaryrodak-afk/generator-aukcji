@@ -12,12 +12,23 @@ function safeParse(raw: string): Record<string, unknown> | null {
   }
 }
 
+function safeHandle(e: MessageEvent, handler: (data: Record<string, unknown>) => void): void {
+  const data = safeParse(e.data);
+  if (!data) return;
+  try {
+    handler(data);
+  } catch (err) {
+    console.error('[SSE] Event handler error:', err);
+  }
+}
+
 export function useSSE() {
   const { dispatch } = useWizard();
   const esRef = useRef<EventSource | null>(null);
   const jobIdRef = useRef<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unmountedRef = useRef(false);
 
   const connect = useCallback(async (jobId: string) => {
     if (!jobId || esRef.current) return;
@@ -42,15 +53,13 @@ export function useSSE() {
       esRef.current = null;
 
       reconnectTimer.current = setTimeout(() => {
-        if (jobIdRef.current) {
+        if (jobIdRef.current && !unmountedRef.current) {
           connect(jobIdRef.current);
         }
       }, 3000);
     };
 
-    es.addEventListener('progress', (e) => {
-      const data = safeParse(e.data);
-      if (!data) return;
+    es.addEventListener('progress', (e) => safeHandle(e as MessageEvent, (data) => {
       dispatch({
         type: 'SET_PROGRESS',
         progress: {
@@ -59,11 +68,9 @@ export function useSSE() {
           message: (data.message as string) || '',
         },
       });
-    });
+    }));
 
-    es.addEventListener('image', (e) => {
-      const data = safeParse(e.data);
-      if (!data) return;
+    es.addEventListener('image', (e) => safeHandle(e as MessageEvent, (data) => {
       const img: GeneratedImage = {
         url: data.url as string,
         key: (data.key as string) || `img_${Date.now()}`,
@@ -71,17 +78,13 @@ export function useSSE() {
         label: (data.label as string) || '',
       };
       dispatch({ type: 'ADD_LIVE_IMAGE', image: img });
-    });
+    }));
 
-    es.addEventListener('product_dna', (e) => {
-      const data = safeParse(e.data);
-      if (!data) return;
+    es.addEventListener('product_dna', (e) => safeHandle(e as MessageEvent, (data) => {
       dispatch({ type: 'SET_PRODUCT_DNA', dna: (data.dna || data) as Record<string, unknown> });
-    });
+    }));
 
-    es.addEventListener('extraction', (e) => {
-      const data = safeParse(e.data);
-      if (!data) return;
+    es.addEventListener('extraction', (e) => safeHandle(e as MessageEvent, (data) => {
       if (data.category || data.colors || data.features) {
         dispatch({
           type: 'SET_ANALYSIS',
@@ -97,63 +100,51 @@ export function useSSE() {
           },
         });
       }
-    });
+    }));
 
-    es.addEventListener('phase1_complete', (e) => {
-      const data = safeParse(e.data);
-      if (!data) return;
+    es.addEventListener('phase1_complete', (e) => safeHandle(e as MessageEvent, (data) => {
       dispatch({ type: 'SET_PHASE', phase: 'phase1_approval' as GenerationPhase });
       dispatch({ type: 'SET_PHASE_IMAGES', images: (data.images as GeneratedImage[]) || [] });
       dispatch({ type: 'SET_PHASE_ROUND', round: (data.round as number) || 1 });
-    });
+    }));
 
-    es.addEventListener('phase2_complete', (e) => {
-      const data = safeParse(e.data);
-      if (!data) return;
+    es.addEventListener('phase2_complete', (e) => safeHandle(e as MessageEvent, (data) => {
       dispatch({ type: 'SET_PHASE', phase: 'phase2_approval' as GenerationPhase });
       dispatch({ type: 'SET_PHASE_IMAGES', images: (data.images as GeneratedImage[]) || [] });
       dispatch({ type: 'SET_PHASE_ROUND', round: (data.round as number) || 1 });
-    });
+    }));
 
-    es.addEventListener('selfcheck', (e) => {
-      const data = safeParse(e.data);
-      if (!data) return;
+    es.addEventListener('selfcheck', (e) => safeHandle(e as MessageEvent, (data) => {
       const check: SelfCheck = {
         score: (data.score as number) || 0,
         model: (data.model as string) || '',
         differences: (data.differences as string[]) || [],
       };
       dispatch({ type: 'ADD_SELFCHECK', check });
-    });
+    }));
 
-    es.addEventListener('retry', (e) => {
-      const data = safeParse(e.data);
-      if (!data) return;
+    es.addEventListener('retry', (e) => safeHandle(e as MessageEvent, (data) => {
       dispatch({
         type: 'SET_PROGRESS',
         progress: { step: 0, total: 0, message: `Ponowna próba: ${(data.reason as string) || ''}` },
       });
-    });
+    }));
 
-    es.addEventListener('soft_warning', (e) => {
-      const data = safeParse(e.data);
-      if (!data) return;
+    es.addEventListener('soft_warning', (e) => safeHandle(e as MessageEvent, (data) => {
       const msg = (data.message as string) || 'Ostrzeżenie';
       toast.warning(msg);
       dispatch({
         type: 'SET_PROGRESS',
         progress: { step: 0, total: 0, message: msg },
       });
-    });
+    }));
 
     es.addEventListener('phase_timeout', () => {
       toast.error('Przekroczono czas oczekiwania na akceptację fazy');
       dispatch({ type: 'SET_ERROR', error: 'Przekroczono czas oczekiwania na akceptację fazy' });
     });
 
-    es.addEventListener('complete', (e) => {
-      const data = safeParse(e.data);
-      if (!data) return;
+    es.addEventListener('complete', (e) => safeHandle(e as MessageEvent, (data) => {
       toast.success('Generowanie zakończone');
       dispatch({
         type: 'SET_RESULTS',
@@ -173,27 +164,25 @@ export function useSSE() {
       esRef.current = null;
       jobIdRef.current = null;
       setIsConnected(false);
-    });
+    }));
 
     es.addEventListener('error', (e) => {
       if (e instanceof MessageEvent) {
-        const data = safeParse(e.data);
-        if (!data) return;
-        const msg = (data.message as string) || 'Błąd generowania';
-        toast.error(msg);
-        dispatch({ type: 'SET_ERROR', error: msg });
+        safeHandle(e, (data) => {
+          const msg = (data.message as string) || 'Błąd generowania';
+          toast.error(msg);
+          dispatch({ type: 'SET_ERROR', error: msg });
+        });
       }
     });
 
-    es.addEventListener('cost_update', (e) => {
-      const data = safeParse(e.data);
-      if (!data) return;
+    es.addEventListener('cost_update', (e) => safeHandle(e as MessageEvent, (data) => {
       dispatch({
         type: 'SET_COST',
         total: (data.total as number) || 0,
         perModel: (data.per_model as Record<string, number>) || {},
       });
-    });
+    }));
   }, [dispatch]);
 
   const disconnect = useCallback(() => {
@@ -208,6 +197,7 @@ export function useSSE() {
 
   useEffect(() => {
     return () => {
+      unmountedRef.current = true;
       disconnect();
     };
   }, [disconnect]);

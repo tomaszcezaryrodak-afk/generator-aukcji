@@ -29,6 +29,9 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
+# Timeout na FAL.AI subscribe (sekundy). Zapobiega wieszacym sie requestom.
+FAL_AI_CALL_TIMEOUT = 180
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -127,8 +130,8 @@ class ImageGenerator(ABC):
             except Exception as e:
                 err = str(e)
                 retryable = any(
-                    code in err for code in ["429", "500", "503", "RESOURCE_EXHAUSTED"]
-                )
+                    code in err for code in ["429", "500", "503", "RESOURCE_EXHAUSTED", "TimeoutError"]
+                ) or isinstance(e, asyncio.TimeoutError)
                 if attempt < max_retries and retryable:
                     import random
                     wait = 5 * (2 ** attempt) + random.uniform(0, 2)
@@ -394,18 +397,21 @@ class KontextMaxGenerator(ImageGenerator):
         product_uri = _pil_to_base64_uri(reference_images[0])
 
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: client.subscribe(
-                KONTEXT_MAX_MODEL,
-                arguments={
-                    "prompt": prompt,
-                    "image_url": product_uri,
-                    "image_size": {"width": target_size[0], "height": target_size[1]},
-                    "num_images": 1,
-                    "output_format": "jpeg",
-                },
+        result = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: client.subscribe(
+                    KONTEXT_MAX_MODEL,
+                    arguments={
+                        "prompt": prompt,
+                        "image_url": product_uri,
+                        "image_size": {"width": target_size[0], "height": target_size[1]},
+                        "num_images": 1,
+                        "output_format": "jpeg",
+                    },
+                ),
             ),
+            timeout=FAL_AI_CALL_TIMEOUT,
         )
         url = result["images"][0]["url"]
         return _download_image_from_url(url)
@@ -449,12 +455,15 @@ class Flux2ProEditGenerator(ImageGenerator):
             arguments["image_urls"] = image_urls
 
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: client.subscribe(
-                FLUX_2_PRO_EDIT_MODEL,
-                arguments=arguments,
+        result = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: client.subscribe(
+                    FLUX_2_PRO_EDIT_MODEL,
+                    arguments=arguments,
+                ),
             ),
+            timeout=FAL_AI_CALL_TIMEOUT,
         )
         url = result["images"][0]["url"]
         return _download_image_from_url(url)
@@ -510,12 +519,15 @@ class KlingO3Generator(ImageGenerator):
             arguments["image_urls"] = image_urls
 
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: client.subscribe(
-                KLING_O3_MODEL,
-                arguments=arguments,
+        result = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: client.subscribe(
+                    KLING_O3_MODEL,
+                    arguments=arguments,
+                ),
             ),
+            timeout=FAL_AI_CALL_TIMEOUT,
         )
         url = result["images"][0]["url"]
         return _download_image_from_url(url)
@@ -652,12 +664,15 @@ class Flux2LoRAGenerator(ImageGenerator):
         }
 
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: client.subscribe(
-                FLUX_2_LORA_MODEL,
-                arguments=arguments,
+        result = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: client.subscribe(
+                    FLUX_2_LORA_MODEL,
+                    arguments=arguments,
+                ),
             ),
+            timeout=FAL_AI_CALL_TIMEOUT,
         )
         url = result["images"][0]["url"]
         return _download_image_from_url(url)

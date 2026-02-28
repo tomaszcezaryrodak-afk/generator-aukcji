@@ -17,6 +17,7 @@ export default function Step2Analysis() {
     if (hasStarted.current || state.suggestedCategory) return;
     if (state.images.length === 0) return;
 
+    let cancelled = false;
     hasStarted.current = true;
     dispatch({ type: 'SET_ANALYZING', isAnalyzing: true });
 
@@ -31,6 +32,7 @@ export default function Step2Analysis() {
     api
       .uploadAndAnalyze(formData)
       .then((res: Record<string, unknown>) => {
+        if (cancelled) return;
         if (res.session_id) {
           dispatch({ type: 'SET_SESSION_ID', sessionId: res.session_id as string });
         }
@@ -53,10 +55,13 @@ export default function Step2Analysis() {
         });
       })
       .catch((err: Error) => {
+        if (cancelled) return;
         hasStarted.current = false;
         dispatch({ type: 'SET_ERROR', error: `Błąd analizy: ${err.message}` });
         dispatch({ type: 'SET_ANALYZING', isAnalyzing: false });
       });
+
+    return () => { cancelled = true; };
   }, [state.images, state.mainImageIndex, state.specText, state.suggestedCategory, sessionId, dispatch]);
 
   if (state.error && !state.isAnalyzing) {

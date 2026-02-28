@@ -43,15 +43,21 @@ export default function Step4Features() {
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
-        {state.confirmedFeatures.map((f, i) => (
-          <FeatureRow
-            key={f.key + i}
-            label={f.key}
-            value={f.value}
-            onChange={(v) => handleChange(i, v)}
-            onRemove={() => handleRemove(i)}
-          />
-        ))}
+        {state.confirmedFeatures.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            Brak cech. Dodaj pierwszą cechę produktu poniżej
+          </p>
+        ) : (
+          state.confirmedFeatures.map((f, i) => (
+            <FeatureRow
+              key={f.key + i}
+              label={f.key}
+              value={f.value}
+              onChange={(v) => handleChange(i, v)}
+              onRemove={() => handleRemove(i)}
+            />
+          ))
+        )}
 
         <div className="flex items-center gap-2 border-t border-border pt-3">
           <Input

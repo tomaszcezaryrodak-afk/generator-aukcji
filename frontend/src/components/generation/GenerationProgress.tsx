@@ -23,7 +23,7 @@ export default function GenerationProgress({ step, total, message }: GenerationP
           </span>
         )}
       </div>
-      <Progress value={percent} />
+      <Progress value={percent} aria-label="Postęp generowania" />
     </div>
   );
 }

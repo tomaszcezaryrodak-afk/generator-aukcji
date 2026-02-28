@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useWizard } from '@/context/WizardContext';
 import { useAuth } from '@/context/AuthContext';
 import { useSSE } from '@/hooks/useSSE';
@@ -8,17 +8,19 @@ import GenerationProgress from '@/components/generation/GenerationProgress';
 import LiveGallery from '@/components/generation/LiveGallery';
 import PhaseGate from '@/components/generation/PhaseGate';
 import { api } from '@/lib/api';
-import { Wand2, XCircle, ArrowLeft } from 'lucide-react';
+import { Wand2, XCircle, ArrowLeft, Loader2 } from 'lucide-react';
 
 export default function Step5Generate() {
   const { state, dispatch } = useWizard();
   const { sessionId } = useAuth();
   const { connect, disconnect, isConnected } = useSSE();
   const hasStarted = useRef(false);
+  const [isStarting, setIsStarting] = useState(false);
 
   const startGeneration = async () => {
     if (!sessionId || hasStarted.current) return;
     hasStarted.current = true;
+    setIsStarting(true);
 
     dispatch({ type: 'SET_GENERATING', isGenerating: true });
     dispatch({ type: 'SET_PHASE', phase: 'dna' });
@@ -40,6 +42,7 @@ export default function Step5Generate() {
       await connect(res.job_id);
     } catch (err) {
       hasStarted.current = false;
+      setIsStarting(false);
       dispatch({ type: 'SET_ERROR', error: `Błąd generowania: ${(err as Error).message}` });
       dispatch({ type: 'SET_GENERATING', isGenerating: false });
     }
@@ -126,9 +129,14 @@ export default function Step5Generate() {
             size="lg"
             className="flex-1 gap-2"
             onClick={startGeneration}
+            disabled={isStarting}
           >
-            <Wand2 className="h-5 w-5" />
-            Rozpocznij generowanie
+            {isStarting ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Wand2 className="h-5 w-5" />
+            )}
+            {isStarting ? 'Uruchamianie...' : 'Rozpocznij generowanie'}
           </Button>
         </div>
       </CardContent>

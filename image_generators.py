@@ -130,10 +130,11 @@ class ImageGenerator(ABC):
                     code in err for code in ["429", "500", "503", "RESOURCE_EXHAUSTED"]
                 )
                 if attempt < max_retries and retryable:
-                    wait = 5 * attempt
+                    import random
+                    wait = 5 * (2 ** attempt) + random.uniform(0, 2)
                     logger.warning(
                         f"{self.name()} error retry {attempt}/{max_retries}: "
-                        f"{err[:120]}, wait {wait}s"
+                        f"{err[:120]}, wait {wait:.1f}s"
                     )
                     await asyncio.sleep(wait)
                 else:

@@ -57,9 +57,15 @@ export default function PhaseGate() {
     }
   };
 
+  const [confirmCancel, setConfirmCancel] = useState(false);
+
   const handleCancel = async () => {
     if (!sessionId) return;
-    if (!window.confirm('Anulować generowanie? Postęp zostanie utracony.')) return;
+    if (!confirmCancel) {
+      setConfirmCancel(true);
+      return;
+    }
+    setConfirmCancel(false);
     setIsSubmitting(true);
     try {
       await api.cancelGeneration(sessionId);
@@ -89,6 +95,11 @@ export default function PhaseGate() {
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
+        {state.error && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive" role="alert">
+            {state.error}
+          </div>
+        )}
         <LiveGallery images={state.phaseImages} expectedCount={0} />
 
         <div className="space-y-3 border-t border-border pt-4">
@@ -130,14 +141,15 @@ export default function PhaseGate() {
               Popraw
             </Button>
             <Button
-              variant="destructive"
+              variant={confirmCancel ? 'destructive' : 'outline'}
               size="sm"
               className="min-h-11 gap-1"
               onClick={handleCancel}
+              onBlur={() => setConfirmCancel(false)}
               disabled={isSubmitting}
             >
               <XCircle className="h-4 w-4" />
-              Anuluj
+              {confirmCancel ? 'Na pewno?' : 'Anuluj'}
             </Button>
           </div>
         </div>

@@ -948,9 +948,14 @@ async def generate_stream(job_id: str, request: Request, ticket: str = Query("")
             return
 
         while True:
+            if await request.is_disconnected():
+                break
+
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=15.0)
             except asyncio.TimeoutError:
+                if await request.is_disconnected():
+                    break
                 # Keep-alive ping
                 yield ": ping\n\n"
                 continue
@@ -1265,7 +1270,8 @@ async def baselinker_push(request: Request, session: SessionData = Depends(requi
     # Deduplikacja SKU
     try:
         existing_id = await asyncio.to_thread(check_sku_exists, bl_token, inventory_id, sku)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"check_sku_exists failed for {sku}: {e!s:.200}")
         existing_id = None
 
     if existing_id and not force_overwrite:
@@ -1684,7 +1690,7 @@ async def _run_generation(
             session.text_gen_count += 1
             _track_cost(session, "gemini-text", COST_GEMINI_TEXT_USD)
         except Exception as e:
-            logger.error(f"Product DNA failed: {str(e)[:100]}")
+            logger.error(f"[{session.job_id}] Product DNA failed: {str(e)[:200]}", exc_info=True)
             await _send_event(queue, "warning", {"message": f"Analiza produktu: {get_user_error(e)}"})
 
         # Zapisz DNA w sesji
@@ -1935,7 +1941,7 @@ async def _run_generation(
                         await asyncio.sleep(RATE_LIMIT_SEC)
 
                 except Exception as e:
-                    logger.error(f"Lifestyle failed: {scene_name} - {str(e)[:100]}")
+                    logger.error(f"[{session.job_id}] Lifestyle failed: {scene_name} - {str(e)[:200]}", exc_info=True)
                     await _send_event(queue, "warning", {"message": f"{scene_name}: {get_user_error(e)}"})
                     break
 
@@ -2068,7 +2074,7 @@ async def _run_generation(
                     "message": "Opis zablokowany przez filtr bezpieczenstwa.",
                 })
         except Exception as e:
-            logger.error(f"Description failed: {str(e)[:100]}")
+            logger.error(f"[{session.job_id}] Description failed: {str(e)[:200]}", exc_info=True)
             await _send_event(queue, "warning", {
                 "message": f"Opis: {get_user_error(e)}",
             })
@@ -2166,7 +2172,7 @@ async def _run_generation(
         })
 
     except Exception as e:
-        logger.error(f"Generation failed: {type(e).__name__}: {str(e)[:200]}")
+        logger.error(f"[{session.job_id}] Generation failed: {type(e).__name__}: {str(e)[:200]}", exc_info=True)
         session.current_phase = "error"
         session.job_status = "error"
         session.job_error = get_user_error(e)

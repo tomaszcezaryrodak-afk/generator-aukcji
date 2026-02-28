@@ -12,16 +12,26 @@ function safeParse(raw: string): Record<string, unknown> | null {
   }
 }
 
-export function useSSE(sessionId: string | null) {
+export function useSSE() {
   const { dispatch } = useWizard();
   const esRef = useRef<EventSource | null>(null);
+  const jobIdRef = useRef<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const connect = useCallback(() => {
-    if (!sessionId || esRef.current) return;
+  const connect = useCallback(async (jobId: string) => {
+    if (!jobId || esRef.current) return;
+    jobIdRef.current = jobId;
 
-    const es = api.createSSE(sessionId);
+    let ticket: string;
+    try {
+      ticket = await api.getSSETicket();
+    } catch {
+      dispatch({ type: 'SET_ERROR', error: 'Nie udało się uzyskać ticketu SSE' });
+      return;
+    }
+
+    const es = api.createSSE(jobId, ticket);
     esRef.current = es;
 
     es.onopen = () => setIsConnected(true);
@@ -32,7 +42,9 @@ export function useSSE(sessionId: string | null) {
       esRef.current = null;
 
       reconnectTimer.current = setTimeout(() => {
-        connect();
+        if (jobIdRef.current) {
+          connect(jobIdRef.current);
+        }
       }, 3000);
     };
 
@@ -159,6 +171,7 @@ export function useSSE(sessionId: string | null) {
       }
       es.close();
       esRef.current = null;
+      jobIdRef.current = null;
       setIsConnected(false);
     });
 
@@ -181,7 +194,7 @@ export function useSSE(sessionId: string | null) {
         perModel: (data.per_model as Record<string, number>) || {},
       });
     });
-  }, [sessionId, dispatch]);
+  }, [dispatch]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimer.current !== null) clearTimeout(reconnectTimer.current);
@@ -189,6 +202,7 @@ export function useSSE(sessionId: string | null) {
       esRef.current.close();
       esRef.current = null;
     }
+    jobIdRef.current = null;
     setIsConnected(false);
   }, []);
 

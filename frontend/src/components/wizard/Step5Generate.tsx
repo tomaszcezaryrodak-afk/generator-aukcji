@@ -13,7 +13,7 @@ import { Wand2, XCircle, ArrowLeft } from 'lucide-react';
 export default function Step5Generate() {
   const { state, dispatch } = useWizard();
   const { sessionId } = useAuth();
-  const { connect, disconnect, isConnected } = useSSE(sessionId);
+  const { connect, disconnect, isConnected } = useSSE();
   const hasStarted = useRef(false);
 
   const startGeneration = async () => {
@@ -37,7 +37,7 @@ export default function Step5Generate() {
       });
 
       dispatch({ type: 'SET_JOB_ID', jobId: res.job_id });
-      connect();
+      await connect(res.job_id);
     } catch (err) {
       hasStarted.current = false;
       dispatch({ type: 'SET_ERROR', error: `Błąd generowania: ${(err as Error).message}` });

@@ -593,6 +593,10 @@ class GPTImage15Generator(ImageGenerator):
             return img
         elif hasattr(image_data, "url") and image_data.url:
             return _download_image_from_url(image_data.url)
+        logger.warning(
+            f"GPT Image 1.5: brak b64_json/url w odpowiedzi. "
+            f"Atrybuty: {[a for a in dir(image_data) if not a.startswith('_')]}"
+        )
         return None
 
     def cost_per_image(self): return COST_GPT_IMAGE_USD
@@ -671,7 +675,7 @@ LIFESTYLE_CHAIN: list[type[ImageGenerator]] = [
     KontextMaxGenerator,
     Flux2LoRAGenerator,
     GeminiFlashImageGenerator,
-    GPTImage15Generator,
+    GeminiProImageGenerator,
 ]
 
 COMPOSITE_CHAIN: list[type[ImageGenerator]] = [
@@ -714,7 +718,7 @@ def get_lifestyle_generators() -> list[ImageGenerator]:
     gens.append(KontextMaxGenerator())
     gens.append(Flux2LoRAGenerator())
     gens.append(GeminiFlashImageGenerator(thinking_level="HIGH"))
-    gens.append(GPTImage15Generator())
+    gens.append(GeminiProImageGenerator())
     return gens
 
 

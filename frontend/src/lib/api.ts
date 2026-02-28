@@ -181,10 +181,16 @@ class ApiClient {
     return this.request<Record<string, unknown>>('/api/providers/status');
   }
 
-  // SSE
-  createSSE(sessionId: string): EventSource {
-    const url = `/api/generate/stream/${sessionId}${this.token ? `?token=${this.token}` : ''}`;
-    return new EventSource(url);
+  // SSE ticket (jednorazowy, token NIE w URL)
+  async getSSETicket(): Promise<string> {
+    const res = await this.request<{ ticket: string }>('/api/generate/stream-ticket', {
+      method: 'POST',
+    });
+    return res.ticket;
+  }
+
+  createSSE(jobId: string, ticket: string): EventSource {
+    return new EventSource(`/api/generate/stream/${jobId}?ticket=${ticket}`);
   }
 }
 

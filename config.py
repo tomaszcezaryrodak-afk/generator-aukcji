@@ -41,7 +41,7 @@ IMAGE_MODEL_COMPOSITE = "gemini-flash-image"
 IMAGE_MODEL_COMPOSITE_FALLBACK = "flux-2-pro-edit"
 IMAGE_MODEL_FALLBACK_1 = "flux-2-lora"
 IMAGE_MODEL_FALLBACK_2 = "gemini-flash-image"
-IMAGE_MODEL_FALLBACK_3 = "gpt-image-1.5"
+IMAGE_MODEL_FALLBACK_3 = "gemini-pro-image"
 
 # --- LoRA ---
 LORA_MODEL_PATH = get_secret("LORA_MODEL_PATH", "")

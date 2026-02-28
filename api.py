@@ -41,7 +41,7 @@ from config import (
 from sessions import (
     SessionData, sessions, create_session, get_session, cleanup_expired,
     check_lockout, record_failed_login, reset_lockout,
-    TooManySessions,
+    TooManySessions, create_sse_ticket, validate_sse_ticket,
     CLEANUP_INTERVAL,
 )
 
@@ -460,11 +460,9 @@ def get_client_ip(request: Request) -> str:
 
 
 async def require_auth(request: Request) -> SessionData:
-    """Wyciaga token z Bearer header lub query param 'token' (fallback SSE)."""
+    """Wyciaga token z Bearer header. SSE uzywa jednorazowych ticketow."""
     auth = request.headers.get("authorization", "")
     token = auth[7:] if auth.startswith("Bearer ") else ""
-    if not token:
-        token = request.query_params.get("token", "")
     if not token:
         raise HTTPException(401, "Brak tokenu autoryzacji")
     session = get_session(token)
@@ -906,18 +904,22 @@ async def generate(request: Request, session: SessionData = Depends(require_auth
     return {"job_id": job_id}
 
 
+@app.post("/api/generate/stream-ticket")
+async def generate_stream_ticket(session: SessionData = Depends(require_auth)):
+    """Tworzy jednorazowy ticket SSE (30s TTL). Token sesji NIE trafia do URL."""
+    ticket = create_sse_ticket(session.token)
+    return {"ticket": ticket}
+
+
 @app.get("/api/generate/stream/{job_id}")
-async def generate_stream(job_id: str, request: Request, token: str = Query("")):
+async def generate_stream(job_id: str, request: Request, ticket: str = Query("")):
     """SSE stream dla postepow generowania."""
-    # Auth: query param token (SSE nie wspiera headerow w EventSource)
-    if not token:
-        auth_header = request.headers.get("authorization", "")
-        token = auth_header[7:] if auth_header.startswith("Bearer ") else ""
-    if not token:
-        raise HTTPException(401, "Brak tokenu autoryzacji")
-    session = get_session(token)
+    # Auth: jednorazowy ticket (token sesji NIE w URL)
+    if not ticket:
+        raise HTTPException(401, "Brak ticketu SSE. Uzyj POST /api/generate/stream-ticket")
+    session = validate_sse_ticket(ticket)
     if not session:
-        raise HTTPException(401, "Sesja wygasla")
+        raise HTTPException(401, "Ticket wygasl lub juz uzyty")
     if session.job_id != job_id:
         raise HTTPException(404, "Nieznany job_id")
 

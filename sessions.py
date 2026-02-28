@@ -14,6 +14,7 @@ SESSION_TTL = 24 * 3600  # 24h
 CLEANUP_INTERVAL = 3600  # 1h
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_DURATION = 300  # 5 min
+SSE_TICKET_TTL = 30  # 30s, jednorazowy
 
 
 @dataclass
@@ -81,9 +82,16 @@ class LockoutTracker:
     lockout_until: float = 0.0
 
 
+@dataclass
+class SSETicket:
+    session_token: str
+    created_at: float = field(default_factory=time.time)
+
+
 # In-memory stores
 sessions: dict[str, SessionData] = {}
 lockouts: dict[str, LockoutTracker] = {}  # IP -> tracker
+sse_tickets: dict[str, SSETicket] = {}  # ticket_id -> SSETicket
 
 
 class TooManySessions(Exception):
@@ -145,3 +153,30 @@ def record_failed_login(ip: str):
 
 def reset_lockout(ip: str):
     lockouts.pop(ip, None)
+
+
+def create_sse_ticket(session_token: str) -> str:
+    """Tworzy jednorazowy ticket do SSE (30s TTL). Token sesji NIE trafia do URL."""
+    _cleanup_expired_tickets()
+    ticket_id = uuid.uuid4().hex
+    sse_tickets[ticket_id] = SSETicket(session_token=session_token)
+    return ticket_id
+
+
+def validate_sse_ticket(ticket_id: str) -> SessionData | None:
+    """Waliduje i KASUJE ticket (one-time use). Zwraca sesje lub None."""
+    ticket = sse_tickets.pop(ticket_id, None)
+    if ticket is None:
+        return None
+    if time.time() - ticket.created_at > SSE_TICKET_TTL:
+        return None
+    return get_session(ticket.session_token)
+
+
+def _cleanup_expired_tickets():
+    """Usuwa przeterminowane tickety."""
+    now = time.time()
+    expired = [tid for tid, t in sse_tickets.items()
+               if now - t.created_at > SSE_TICKET_TTL]
+    for tid in expired:
+        sse_tickets.pop(tid, None)

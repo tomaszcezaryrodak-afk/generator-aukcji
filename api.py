@@ -182,6 +182,14 @@ def _sanitize_feedback(text: str) -> str:
     return text[:MAX_FEEDBACK_LENGTH]
 
 
+API_CALL_TIMEOUT_SEC = 120
+
+
+async def _api_call_with_timeout(coro, timeout: float = API_CALL_TIMEOUT_SEC):
+    """Wrapper na asyncio.wait_for z timeout. Rzuca TimeoutError."""
+    return await asyncio.wait_for(coro, timeout=timeout)
+
+
 def _track_cost(session: SessionData, model_name: str, cost: float):
     """Tracking kosztow per model."""
     session.model_costs[model_name] = session.model_costs.get(model_name, 0.0) + cost
@@ -347,13 +355,13 @@ def create_studio_packshots(transparent_img, original_img=None):
 async def analyze_product_dna(client, pil_images):
     """Analizuje produkt ze zdjec i zwraca Product DNA jako JSON string."""
     prompt = get_product_dna_prompt()
-    response = await asyncio.to_thread(
+    response = await _api_call_with_timeout(asyncio.to_thread(
         lambda: client.models.generate_content(
             model=MODEL,
             contents=[prompt] + pil_images[:2],
             config=types.GenerateContentConfig(response_modalities=["TEXT"]),
         )
-    )
+    ))
     if response.candidates and response.parts:
         for part in response.parts:
             if part.text:
@@ -369,13 +377,13 @@ async def analyze_product_dna(client, pil_images):
 async def run_selfcheck(client, original_img, generated_img, product_dna_json):
     """Porownuje wygenerowane zdjecie z oryginalem. Zwraca (score, differences, corrections)."""
     prompt = get_selfcheck_prompt(product_dna_json)
-    response = await asyncio.to_thread(
+    response = await _api_call_with_timeout(asyncio.to_thread(
         lambda: client.models.generate_content(
             model=MODEL,
             contents=[prompt, original_img, generated_img],
             config=types.GenerateContentConfig(response_modalities=["TEXT"]),
         )
-    )
+    ))
     if response.candidates and response.parts:
         for part in response.parts:
             if part.text:
@@ -682,13 +690,15 @@ async def analyze_product(request: Request, session: SessionData = Depends(requi
     contents = [prompt] + pil_images[:4]
 
     try:
-        response = await asyncio.to_thread(
+        response = await _api_call_with_timeout(asyncio.to_thread(
             lambda: client.models.generate_content(
                 model=MODEL,
                 contents=contents,
                 config=types.GenerateContentConfig(response_modalities=["TEXT"]),
             )
-        )
+        ))
+    except asyncio.TimeoutError:
+        raise HTTPException(504, "Przekroczono czas oczekiwania na Gemini (120s)")
     except Exception as e:
         raise HTTPException(500, get_user_error(e))
 
@@ -1139,13 +1149,15 @@ async def chat_description(request: Request, session: SessionData = Depends(requ
     prompt = get_description_revision_prompt(current_desc, instruction)
 
     try:
-        response = await asyncio.to_thread(
+        response = await _api_call_with_timeout(asyncio.to_thread(
             lambda: client.models.generate_content(
                 model=MODEL,
                 contents=[prompt],
                 config=types.GenerateContentConfig(response_modalities=["TEXT"]),
             )
-        )
+        ))
+    except asyncio.TimeoutError:
+        return {"success": False, "message": "Przekroczono czas oczekiwania (120s)"}
     except Exception as e:
         return {"success": False, "message": get_user_error(e)}
 
@@ -1386,6 +1398,8 @@ async def history_export(session: SessionData = Depends(require_auth)):
 @app.post("/api/generate/approve")
 async def approve_phase(request: Request, session: SessionData = Depends(require_auth)):
     """Akceptacja biezacej fazy (phase1_approval lub phase2_approval)."""
+    if not session.job_id:
+        return JSONResponse({"error": "Brak aktywnego generowania"}, status_code=400)
     if session.current_phase not in ("phase1_approval", "phase2_approval"):
         return JSONResponse(
             {"error": f"Nie jestes w fazie akceptacji, biezaca: {session.current_phase}"},
@@ -1401,6 +1415,8 @@ async def approve_phase(request: Request, session: SessionData = Depends(require
 @app.post("/api/generate/feedback")
 async def phase_feedback(request: Request, session: SessionData = Depends(require_auth)):
     """Feedback do biezacej fazy (popraw i regeneruj)."""
+    if not session.job_id:
+        return JSONResponse({"error": "Brak aktywnego generowania"}, status_code=400)
     if session.current_phase not in ("phase1_approval", "phase2_approval"):
         return JSONResponse(
             {"error": "Nie jestes w fazie akceptacji"},
@@ -1433,6 +1449,8 @@ async def generation_status(session: SessionData = Depends(require_auth)):
 @app.post("/api/generate/cancel")
 async def cancel_generation(request: Request, session: SessionData = Depends(require_auth)):
     """Anuluj trwajace generowanie."""
+    if not session.job_id:
+        return JSONResponse({"error": "Brak aktywnego generowania"}, status_code=400)
     session.cancel_requested = True
     session.job_status = "idle"
     session.current_phase = "idle"
@@ -1618,7 +1636,9 @@ async def _run_generation(
         # --- [0] Ekstrakcja specyfikacji ---
         await _send_event(queue, "progress", {"step": 0, "total": 12, "message": "Analizuje specyfikacje..."})
 
-        extracted = await asyncio.to_thread(extract_spec_data, client, specyfikacja, pil_images[:4])
+        extracted = await _api_call_with_timeout(
+            asyncio.to_thread(extract_spec_data, client, specyfikacja, pil_images[:4])
+        )
         session.api_calls_count += 1
         session.text_gen_count += 1
         _track_cost(session, "gemini-text", COST_GEMINI_TEXT_USD)
@@ -2029,13 +2049,13 @@ async def _run_generation(
                 kolor_zlew=kolor_zlew, kolor_bateria=kolor_bateria,
                 kolor_syfon=kolor_syfon, kolor_dozownik=kolor_dozownik,
             )
-            desc_response = await asyncio.to_thread(
+            desc_response = await _api_call_with_timeout(asyncio.to_thread(
                 lambda: client.models.generate_content(
                     model=MODEL,
                     contents=[desc_prompt] + pil_images[:4],
                     config=types.GenerateContentConfig(response_modalities=["TEXT"]),
                 )
-            )
+            ))
             if desc_response.candidates and desc_response.parts:
                 for part in desc_response.parts:
                     if part.text:

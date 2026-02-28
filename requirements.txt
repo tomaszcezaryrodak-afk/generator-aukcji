@@ -1,5 +1,10 @@
-streamlit>=1.42,<2.0
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
 google-genai>=1.0
 Pillow>=10.0
 requests>=2.31
 python-dotenv>=1.0
+rembg[cpu]>=2.0
+openai>=1.75
+fal-client>=0.5

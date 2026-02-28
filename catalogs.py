@@ -416,3 +416,73 @@ def get_bl_category_id(catalog_name, kategoria):
     if not cat:
         return 0
     return cat["bl_category_map"].get(kategoria, 0)
+
+
+# ---------------------------------------------------------------------------
+# Features per typ produktu (mapowanie parametrow Allegro)
+# Zrodlo: BASELINKER-RECON.md
+# ---------------------------------------------------------------------------
+
+# Domyslne pola obecne w kazdym produkcie
+_DEFAULT_FEATURES = ["Stan", "Stan opakowania", "EAN", "Kod producenta", "Marka"]
+
+FEATURES_PER_TYPE = {
+    "zlew": {
+        "required": _DEFAULT_FEATURES + [
+            "Rodzaj", "Liczba komór", "Materiał wykonania", "Kolor", "Kształt",
+            "Dłuższy bok", "Krótszy bok", "Głębokość", "Linia",
+            "Zawartość zestawu", "Informacje dodatkowe",
+        ],
+        "defaults": {"Stan": "Nowy", "Stan opakowania": "oryginalne"},
+    },
+    "zestaw": {
+        "required": _DEFAULT_FEATURES + [
+            "Rodzaj", "Liczba komór", "Materiał wykonania", "Kolor", "Kształt",
+            "Dłuższy bok", "Krótszy bok", "Głębokość", "Linia",
+            "Zawartość zestawu", "Informacje dodatkowe",
+        ],
+        "defaults": {"Stan": "Nowy", "Stan opakowania": "oryginalne"},
+    },
+    "bateria": {
+        "required": _DEFAULT_FEATURES + [
+            "Typ montażu", "Typ", "Kolor", "Linia", "Informacje dodatkowe",
+        ],
+        "defaults": {"Stan": "Nowy", "Stan opakowania": "oryginalne"},
+    },
+    "grzalka": {
+        "required": _DEFAULT_FEATURES + [
+            "Rodzaj", "Moc grzewcza", "Kolor",
+        ],
+        "defaults": {"Stan": "Nowy", "Stan opakowania": "oryginalne"},
+    },
+    "syfon": {
+        "required": _DEFAULT_FEATURES + [
+            "Kolor", "Materiał wykonania", "Średnica",
+        ],
+        "defaults": {"Stan": "Nowy", "Stan opakowania": "oryginalne"},
+    },
+    "dozownik": {
+        "required": _DEFAULT_FEATURES + [
+            "Kolor", "Materiał wykonania", "Pojemność",
+        ],
+        "defaults": {"Stan": "Nowy", "Stan opakowania": "oryginalne"},
+    },
+    "akcesoria": {
+        "required": _DEFAULT_FEATURES + [
+            "Typ", "Materiał wykonania", "Wymiary",
+        ],
+        "defaults": {"Stan": "Nowy", "Stan opakowania": "oryginalne"},
+    },
+}
+
+
+def get_features_for_type(kategoria: str) -> dict:
+    """Zwraca mapowanie features (required + defaults) dla kategorii.
+
+    Uzywa get_seo_key do normalizacji nazwy kategorii.
+    """
+    seo_key = get_seo_key(kategoria)
+    return FEATURES_PER_TYPE.get(seo_key, {
+        "required": _DEFAULT_FEATURES,
+        "defaults": {"Stan": "Nowy", "Stan opakowania": "oryginalne"},
+    })

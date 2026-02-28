@@ -109,6 +109,68 @@ def check_ban_list(text: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Pipeline v3.0: Bloki stale do promptow (reuzywalne)
+# ---------------------------------------------------------------------------
+
+DSLR_REALISM_BLOCK = (
+    "REAL PHOTOGRAPH Canon EOS R5 / Nikon Z8. Natural daylight 5500K. "
+    "NOT 3D render, NOT CGI, NOT AI-generated. "
+    "Imperfections: uneven grout, water droplets, subtle grain ISO 400, "
+    "dust in raking light. Realistic contact shadow under product."
+)
+
+SHADOW_REFLECTION_BLOCK = (
+    "SHADOW AND REFLECTION: realistic contact shadow under product, "
+    "subtle reflection on wet granite surface, natural light interaction. "
+    "NOT floating, NOT sticker-pasted, NOT composited look."
+)
+
+MATERIAL_ACCURACY_BLOCK = (
+    "granite = matte stone, mineral speckles. NOT plastic, NOT ceramic. "
+    "Metal = realistic reflections. Water on granite = beading, "
+    "natural contact shadow."
+)
+
+BANNED_PHRASES_BLOCK = (
+    "NEVER: moody, dramatic, luxury, premium, high-end, elegant, "
+    "golden hour, cinematic, ethereal, artisanal."
+)
+
+PRESERVATION_LIST_BLOCK = (
+    "PRESERVATION LIST: product shape, dimensions, bowl count, "
+    "drainboard position, faucet hole placement, color tone, "
+    "surface texture, hardware finish. Extreme accuracy required. "
+    "DO NOT alter, stylize, or reinterpret any product feature."
+)
+
+
+def build_product_dna_enforcement(dna: dict) -> str:
+    """Buduje blok PRODUCT DNA ENFORCEMENT z danych DNA."""
+    bowl_count = dna.get("bowl_count", "unknown")
+    shape = dna.get("bowl_shape", dna.get("shape", "unknown"))
+    color = dna.get("color", "unknown")
+    has_drainboard = dna.get("has_drainboard", False)
+    has_faucet_hole = dna.get("has_faucet_hole", False)
+    material_texture = dna.get("material_texture", "granitowy")
+    visible = dna.get("visible_elements", [])
+    not_present = dna.get("NOT_present", [])
+
+    drainboard_rule = "WITH drainboard" if has_drainboard else "NO drainboard"
+    faucet_hole_rule = "WITH faucet hole" if has_faucet_hole else "NO faucet hole"
+    visible_str = ", ".join(visible) if visible else "all elements from reference"
+    not_present_str = ", ".join(not_present) if not_present else "nothing extra"
+
+    return (
+        f"ABSOLUTE REQUIREMENT:\n"
+        f"- EXACTLY {bowl_count} bowl(s), shape {shape}\n"
+        f"- {drainboard_rule}, {faucet_hole_rule}\n"
+        f"- Color {color} with {material_texture}\n"
+        f"- ALL visible_elements: {visible_str}\n"
+        f"- ZERO NOT_present: {not_present_str}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Prompty grafik
 # ---------------------------------------------------------------------------
 
@@ -607,6 +669,69 @@ def parse_description_sections(desc_text):
 # Prompt ekstrakcji danych ze specyfikacji
 # ---------------------------------------------------------------------------
 
+def get_analysis_prompt(
+    spec_text: str,
+    catalog_name: str,
+    available_categories: list[str],
+    available_colors: dict,
+    required_features: list[str],
+) -> str:
+    """Prompt do analizy produktu (nowy flow: analyze -> confirm -> generate).
+
+    AI analizuje zdjecia + specyfikacje i zwraca sugestie kategorii, kolorow i features.
+    """
+    categories_str = "\n".join(f"  - {c}" for c in available_categories)
+
+    colors_parts = []
+    for element, color_map in available_colors.items():
+        color_names = list(color_map.keys())
+        colors_parts.append(f"  {element}: {', '.join(color_names)}")
+    colors_str = "\n".join(colors_parts)
+
+    features_str = ", ".join(required_features)
+
+    return f"""Analizujesz produkt z katalogu "{catalog_name}".
+Na podstawie zdjec i opisu produktu, zasugeruj parametry aukcji Allegro.
+
+SPECYFIKACJA PRODUKTU:
+{spec_text}
+
+DOSTEPNE KATEGORIE (wybierz JEDNA najbardziej pasujaca + max 2 alternatywy):
+{categories_str}
+
+DOSTEPNE KOLORY PER ELEMENT:
+{colors_str}
+
+WYMAGANE FEATURES DLA TEJ KATEGORII:
+{features_str}
+
+Zwroc DOKLADNIE taki JSON (bez dodatkowego tekstu, bez ```json blokow):
+{{
+  "kategoria": "nazwa kategorii z listy powyzej",
+  "kategoria_alternatives": ["max 2 alternatywne kategorie"],
+  "kolory": {{
+    "zlew": "kolor z listy kolor_zlew lub null",
+    "bateria": "kolor z listy kolor_bateria lub null",
+    "syfon": "kolor z listy kolor_syfon_widoczny lub null",
+    "dozownik": "kolor z listy kolor_dozownik lub null"
+  }},
+  "features": {{
+    "nazwa_parametru": "wartosc",
+    "...": "..."
+  }},
+  "tytul_suggestion": "propozycja tytulu Allegro 60-75 znakow",
+  "sku_suggestion": "propozycja SKU w formacie TYP-MODEL-KOLOR"
+}}
+
+ZASADY:
+1. Kategorie i kolory MUSZA byc z list powyzej (dokladne dopasowanie nazw)
+2. Features: wypelnij TYLKO te ktore wynikaja ze specyfikacji i zdjec
+3. Kolory: jesli element nie wystepuje w produkcie, podaj null
+4. Tytul: 60-75 znakow, slowa kluczowe na poczatku, bez CAPS LOCK
+5. SKU: format TYP-MODEL-KOLOR (np. ZLEW-SONGOS-CZ, BAT-FLEX-CZZL)
+6. Odpowiedz TYLKO obiektem JSON"""
+
+
 def get_extraction_prompt(spec_text: str) -> str:
     """Prompt do ekstrakcji danych ze specyfikacji produktu."""
     return f"""Przeanalizuj poniższą specyfikację produktu i wyekstrahuj dane do formatu JSON.
@@ -746,6 +871,315 @@ ZASADY:
 
 
 # ---------------------------------------------------------------------------
+# Pipeline v2: Product DNA + Lifestyle v2 + Self-check
+# ---------------------------------------------------------------------------
+
+LIFESTYLE_SCENES: list[dict] = [
+    {
+        "name": "Drewno · overhead",
+        "countertop": "solid oak or walnut wooden",
+        "perspective": "Top-down overhead view, bird's eye",
+        "details": "coffee mug, fresh herbs in pot, wooden cutting board, linen towel",
+    },
+    {
+        "name": "Drewno · frontal",
+        "countertop": "solid oak or walnut wooden",
+        "perspective": "Eye-level front view, straight-on",
+        "details": "window with natural daylight behind, spice jars, linen towel draped on edge",
+    },
+    {
+        "name": "Granit · overhead",
+        "countertop": "granite (NOT marble)",
+        "perspective": "Top-down overhead view, bird's eye",
+        "details": "bowl of fresh fruit, glass of water, small ceramic dish with lemons",
+    },
+    {
+        "name": "Granit · close-up",
+        "countertop": "granite (NOT marble)",
+        "perspective": "Close-up macro detail shot, tight crop",
+        "details": "water droplets on surface, visible texture of countertop and product",
+    },
+    {
+        "name": "W uzyciu",
+        "countertop": "any light-colored",
+        "perspective": "Eye-level 3/4 angle",
+        "details": "hands washing vegetables under running water, water flowing from faucet, fresh produce nearby",
+    },
+    {
+        "name": "Scandinavian jasna",
+        "countertop": "white or light oak",
+        "perspective": "Eye-level front view",
+        "details": "minimalist bright kitchen, lots of natural light, white tiles, simple ceramic vase, clean lines",
+    },
+]
+
+
+def get_composite_packshot_prompt(
+    products: list[dict],
+    perspective: str = "top-down",
+    thinking_level: str | None = "HIGH",
+) -> str:
+    """Prompt do kompozytu zestawu (Gemini 3.1 Flash Image, do 10 ref images).
+
+    Args:
+        products: lista dict z name i description per produkt
+            np. [{"name": "zlew granitowy czarny", "description": "80x50cm, 1 komora"},
+                 {"name": "bateria kuchenna czarno-zlota", "description": "wyciagana wylewka"}]
+        perspective: "top-down" | "front" | "three-quarter"
+        thinking_level: "HIGH" | "MINIMAL" | None (batch)
+    """
+    perspective_map = {
+        "top-down": "top-down (bird's eye) view, looking straight down",
+        "front": "front (eye-level) view, straight-on perspective",
+        "three-quarter": "three-quarter (45 degree) angle view",
+    }
+    perspective_desc = perspective_map.get(perspective, perspective_map["top-down"])
+
+    # Nazewnictwo obrazow referencyjnych (Nano Banana best practice)
+    ref_lines = []
+    for i, prod in enumerate(products, 1):
+        ref_lines.append(f"Image {i} ({prod['name']}): {prod.get('description', '')}")
+    ref_block = "\n".join(ref_lines)
+
+    using_clause = " and ".join(
+        f"Image {i} ({p['name']})" for i, p in enumerate(products, 1)
+    )
+
+    return f"""Pure white studio background (RGB 255, 255, 255) with subtle natural
+contact shadow at base. Product photographed with Canon EOS R5, 50mm
+f/1.8 lens, studio 3-point softbox lighting, 45-degree key light.
+Output: 2000x2000px (1:1 square). 8K UHD quality anchor.
+
+=== REFERENCE IMAGES ===
+{ref_block}
+
+Using {using_clause}: compose a professional product set photograph
+showing all items together in {perspective_desc}.
+
+The faucet should be naturally mounted on the sink (in the faucet hole
+if present). All accessories positioned as they would be installed.
+
+{PRESERVATION_LIST_BLOCK}
+
+{MATERIAL_ACCURACY_BLOCK}
+
+NEGATIVE: Do NOT add items not present in reference images. Do NOT alter,
+stylize, or reinterpret any product feature. Do NOT add any text, labels,
+watermarks, or annotations. {BANNED_PHRASES_BLOCK}"""
+
+
+def get_product_dna_prompt() -> str:
+    """Prompt do analizy produktu ze zdjęcia. Gemini TEXT opisuje dokładnie co widzi."""
+    return """You are a product photography analyst for a granite kitchen sink e-commerce store.
+
+Analyze the product image(s) provided. Describe EXACTLY what you see. Do NOT guess, infer, or add elements that are not visible.
+
+Return a JSON object with the following fields (use Polish for all string values):
+
+{
+  "product_type": "type of product, e.g. zlew granitowy nablatowy, bateria kuchenna, zestaw zlew + bateria",
+  "shape": "overall shape, e.g. kwadratowy, prostokątny z ociekaczem, okrągły",
+  "color": "dominant color, e.g. biały, czarny nakrapiany, szary",
+  "mounting_type": "nablatowy, wpuszczany, podwieszany, or null if not determinable",
+  "has_drainboard": true/false,
+  "has_faucet_hole": true/false,
+  "bowl_count": 1 or 2,
+  "bowl_shape": "kwadratowa, prostokątna, or okrągła",
+  "drain_position": "środek, prawy, or lewy",
+  "drain_type": "kwadratowy, okrągły, or automatyczny",
+  "visible_elements": ["list of ALL elements visible in the image, e.g. zlew, korek kwadratowy chromowany"],
+  "NOT_present": ["list of elements that are NOT in the image, e.g. bateria, dozownik, ociekacz"],
+  "material_texture": "texture description, e.g. gładki ceramiczny, nakrapiany granitowy, matowy",
+  "approximate_dimensions": "estimated size, e.g. ~50x40cm, ~80x50cm",
+  "distinctive_features": ["unique traits, e.g. widoczny front (farmhouse), zaokrąglone narożniki"]
+}
+
+RULES:
+- Respond with ONLY the JSON object. No extra text, no markdown code blocks, no explanation.
+- If a field cannot be determined from the image, use null.
+- Be precise about what IS and what IS NOT in the image. This is critical for downstream generation.
+- visible_elements: list EVERY distinct physical element you can see.
+- NOT_present: list common kitchen sink accessories that are ABSENT (bateria, dozownik, ociekacz, syfon, deska do krojenia, koszyk, etc.)."""
+
+
+def get_lifestyle_prompt_v2(
+    scene_config: dict,
+    product_dna_json: str,
+    corrections: str = "",
+    model_type: str = "gemini",
+) -> str:
+    """Prompt lifestyle v3.0 z DSLR realism, Product DNA, Shadow/Reflection.
+
+    Args:
+        scene_config: slownik z name, countertop, perspective, details
+        product_dna_json: string JSON z get_product_dna_prompt (Product DNA)
+        corrections: string z self-check (puste = pierwsza proba)
+        model_type: "gemini" | "lora" | "flux" | "gpt" (dostosowuje prompt)
+    """
+    no_text = "Do NOT add any text, labels, watermarks, or annotations to the image."
+    negative = (
+        "NEVER: text overlays, watermarks, plastic sheen on granite, blurry edges, "
+        "floating objects, AI artifacts, distorted proportions, extra faucets or sinks."
+    )
+
+    # Parsuj Product DNA
+    try:
+        dna = json.loads(product_dna_json)
+    except (json.JSONDecodeError, TypeError):
+        dna = {}
+
+    visible = dna.get("visible_elements", [])
+    not_present = dna.get("NOT_present", [])
+    visible_str = ", ".join(visible) if visible else "all elements from the reference image"
+    not_present_str = ", ".join(not_present) if not_present else "nothing extra"
+
+    # Product DNA enforcement
+    dna_enforcement = build_product_dna_enforcement(dna) if dna else ""
+
+    corrections_block = ""
+    if corrections:
+        corrections_block = (
+            f"\n\nPREVIOUS ATTEMPT FAILED CHECK. Issues found:\n{corrections}\n"
+            f"Fix these specific issues in this generation attempt."
+        )
+
+    # LoRA: krotszy prompt z trigger word
+    if model_type == "lora":
+        from config import LORA_TRIGGER_WORD
+        return f"""{LORA_TRIGGER_WORD} granite sink in {dna.get('color', 'dark')} installed in \
+{scene_config.get('countertop', 'wooden')} countertop. \
+{scene_config.get('perspective', 'eye-level')}. \
+{scene_config.get('details', 'kitchen accessories')}. \
+{DSLR_REALISM_BLOCK} {MATERIAL_ACCURACY_BLOCK} \
+{dna_enforcement}
+{SHADOW_REFLECTION_BLOCK} {BANNED_PHRASES_BLOCK} {no_text}{corrections_block}"""
+
+    # Flux: structured 5-step prompt
+    if model_type == "flux":
+        return f"""Step 1 (ANALYZE): Product DNA: {product_dna_json}
+Step 2 (STRUCTURE): Scene composition: {scene_config.get('perspective', 'eye-level')}, \
+{scene_config.get('countertop', 'wooden')} countertop, {scene_config.get('details', 'kitchen accessories')}.
+Step 3 (CINEMATOGRAPHY): Canon EOS R5, 85mm f/1.4, natural daylight 5500K.
+Step 4 (RENDER): Generate photorealistic kitchen scene with product installed in countertop.
+Step 5 (VERIFY): {PRESERVATION_LIST_BLOCK}
+
+{dna_enforcement}
+{MATERIAL_ACCURACY_BLOCK}
+{SHADOW_REFLECTION_BLOCK}
+{BANNED_PHRASES_BLOCK}
+{negative}
+{no_text}{corrections_block}"""
+
+    # GPT Image: input_fidelity hint
+    if model_type == "gpt":
+        gpt_hint = "Use input_fidelity: high. Preserve every detail from reference."
+    else:
+        gpt_hint = ""
+
+    # Gemini (default): pelny prompt z DSLR + DNA + Shadow + Thinking mode
+    return f"""You are generating a lifestyle kitchen photograph for an e-commerce Allegro listing.
+Output: 2000x1500px (4:3 landscape). 8K UHD quality anchor.
+
+The transparent PNG of the real product is provided as input. You MUST use it as the exact reference.
+{gpt_hint}
+
+=== PRODUCT DNA (from analysis of the original product) ===
+{product_dna_json}
+
+=== {dna_enforcement} ===
+
+=== FIDELITY RULES (CRITICAL) ===
+The product shape, color, mounting type, drain position, bowl count, and bowl shape MUST match EXACTLY what is described in the Product DNA above.
+MUST include EXACTLY these elements: {visible_str}
+Do NOT add: {not_present_str}
+Do NOT invent, add, remove, or alter ANY part of the product.
+{PRESERVATION_LIST_BLOCK}
+
+=== SCENE ===
+Scene: {scene_config.get('name', 'kitchen lifestyle')}
+Countertop: {scene_config.get('countertop', 'wooden')}
+Perspective: {scene_config.get('perspective', 'top-down overhead view')}
+Props/details: {scene_config.get('details', 'minimal kitchen accessories')}
+
+=== CAMERA & LIGHTING ===
+{DSLR_REALISM_BLOCK}
+
+=== MATERIAL ===
+{MATERIAL_ACCURACY_BLOCK}
+
+=== SHADOW & REFLECTION ===
+{SHADOW_REFLECTION_BLOCK}
+
+=== NEGATIVE ===
+{negative}
+{BANNED_PHRASES_BLOCK}
+{no_text}{corrections_block}"""
+
+
+def get_selfcheck_prompt(product_dna_json: str) -> str:
+    """Prompt do self-check v3.0: porownanie z ORYGINALEM (nie z promptem).
+
+    Oczekuje 2 obrazow: [oryginal, wygenerowane].
+    Weighted scoring: bowl_count 25%, color 30%, shape 15%, accessories 10%, realism 20%.
+    Prog akceptacji: 8/10.
+    """
+    return f"""You are a quality control inspector for e-commerce product photography on Allegro.
+
+You will receive TWO images:
+1. FIRST image: the ORIGINAL product photo (reference, ground truth)
+2. SECOND image: the AI-GENERATED lifestyle photo that should contain the same product
+
+Your job: compare the product in the GENERATED image against the ORIGINAL and score fidelity.
+Compare with the ORIGINAL IMAGE, not just the text description.
+
+=== PRODUCT DNA (expected product attributes) ===
+{product_dna_json}
+
+=== SPECIFIC QUESTIONS (answer each before scoring) ===
+1. How many bowls are visible in the generated image? Does it match the original?
+2. What color is the product? Does it match the original color and speckle pattern?
+3. What shape is the product? (rectangular, square, with/without drainboard)
+4. Is the drainboard present/absent consistent with the original?
+5. Where is the faucet hole? Is it consistent with the original?
+6. Are there ANY elements added that are NOT in the original? (faucet, dispenser, accessories)
+7. Are there ANY elements MISSING that ARE in the original?
+8. Does the product look realistically installed or pasted/floating (sticker effect)?
+
+=== SCORING CRITERIA (weighted) ===
+Score each dimension 1-10:
+
+- bowl_count_score (25%): Correct number of bowls? Correct shape of bowls?
+- color_score (30%): Base color match? Speckle/texture pattern? Finish type (matte/gloss)?
+- shape_score (15%): Overall product shape? Drainboard presence? Proportions?
+- accessories_score (10%): No added elements? No missing elements? Correct hardware?
+- realism_score (20%): Natural integration in scene? Shadows? Reflections? Not floating/pasted?
+- overall_score: Weighted average = bowl_count*0.25 + color*0.30 + shape*0.15 + accessories*0.10 + realism*0.20
+
+=== ACCEPTANCE THRESHOLD ===
+- overall_score >= 8: ACCEPT (good enough for Allegro listing)
+- overall_score 5-7: RETRY with corrections (auto-retry, max 2 attempts)
+- overall_score < 5: FALLBACK to next model in chain
+
+=== OUTPUT FORMAT ===
+Return ONLY a JSON object. No extra text, no markdown code blocks:
+
+{{
+  "bowl_count_score": <1-10>,
+  "color_score": <1-10>,
+  "shape_score": <1-10>,
+  "accessories_score": <1-10>,
+  "realism_score": <1-10>,
+  "overall_score": <1-10>,
+  "answers": ["answer to each of the 8 questions above, in order"],
+  "differences": ["lista konkretnych roznic po polsku, np. dodano dozownik ktorego nie ma w oryginale"],
+  "corrections_needed": "English instructions for retry, e.g. Remove the soap dispenser. Make the bowl square not rectangular."
+}}
+
+If the generated image is perfect (overall_score >= 9), set corrections_needed to empty string "".
+Be strict and precise. Score 8 = minor imperfections acceptable. Score 5-7 = noticeable errors. Below 5 = product is wrong."""
+
+
+# ---------------------------------------------------------------------------
 # Testy
 # ---------------------------------------------------------------------------
 
@@ -839,4 +1273,134 @@ if __name__ == "__main__":
     assert len(regen_test) < 2000, "Prompt za długi po sanityzacji"
     print("FIX-08: sanityzacja regen: OK")
 
-    print(f"\nALL TESTS PASSED ({11} tests)")
+    # --- Pipeline v3.0: Product DNA + Lifestyle v2 + Self-check + Composite ---
+
+    # 9. Test get_product_dna_prompt
+    dna_prompt = get_product_dna_prompt()
+    assert "product_type" in dna_prompt, "Brak product_type w DNA prompt"
+    assert "visible_elements" in dna_prompt, "Brak visible_elements w DNA prompt"
+    assert "NOT_present" in dna_prompt, "Brak NOT_present w DNA prompt"
+    assert "ONLY the JSON" in dna_prompt, "Brak instrukcji JSON-only"
+    print("get_product_dna_prompt: OK")
+
+    # 10. Test LIFESTYLE_SCENES (6 scen w v3.0)
+    assert len(LIFESTYLE_SCENES) == 6, f"Oczekiwano 6 scen, jest {len(LIFESTYLE_SCENES)}"
+    scene_names = [s["name"] for s in LIFESTYLE_SCENES]
+    assert "Drewno · overhead" in scene_names, "Brak sceny Drewno · overhead"
+    assert "Granit · close-up" in scene_names, "Brak sceny Granit · close-up"
+    assert "W uzyciu" in scene_names, "Brak sceny W uzyciu"
+    assert "Scandinavian jasna" in scene_names, "Brak sceny Scandinavian jasna"
+    for scene in LIFESTYLE_SCENES:
+        assert "countertop" in scene, f"Brak countertop w scenie {scene['name']}"
+        assert "perspective" in scene, f"Brak perspective w scenie {scene['name']}"
+        assert "details" in scene, f"Brak details w scenie {scene['name']}"
+    print(f"LIFESTYLE_SCENES: OK ({len(LIFESTYLE_SCENES)} scen)")
+
+    # 11. Test get_lifestyle_prompt_v2 (Gemini, default)
+    test_dna = json.dumps({
+        "product_type": "zlew granitowy nablatowy",
+        "shape": "prostokątny z ociekaczem",
+        "color": "czarny nakrapiany",
+        "mounting_type": "wpuszczany",
+        "has_drainboard": True,
+        "has_faucet_hole": True,
+        "bowl_count": 1,
+        "bowl_shape": "kwadratowa",
+        "drain_position": "środek",
+        "drain_type": "kwadratowy",
+        "visible_elements": ["zlew", "ociekacz", "korek kwadratowy chromowany"],
+        "NOT_present": ["bateria", "dozownik"],
+        "material_texture": "nakrapiany granitowy",
+        "approximate_dimensions": "~80x50cm",
+        "distinctive_features": ["zaokrąglone narożniki"]
+    }, ensure_ascii=False)
+
+    lp_v2 = get_lifestyle_prompt_v2(LIFESTYLE_SCENES[0], test_dna)
+    assert "zlew" in lp_v2, "Brak Product DNA w lifestyle prompt"
+    assert "Do NOT add" in lp_v2, "Brak negative list w lifestyle prompt"
+    assert "MUST include EXACTLY" in lp_v2, "Brak positive list w lifestyle prompt"
+    assert "bateria" in lp_v2, "NOT_present nie wstrzyknięte"
+    assert "FIDELITY RULES" in lp_v2, "Brak fidelity rules"
+    assert "DSLR" in lp_v2 or "Canon EOS R5" in lp_v2, "Brak DSLR realism block"
+    assert "SHADOW" in lp_v2, "Brak Shadow/Reflection block"
+    assert "PRESERVATION" in lp_v2, "Brak Preservation block"
+    assert "2000x1500" in lp_v2, "Brak rozdzielczosci 2000x1500"
+    assert "PREVIOUS ATTEMPT" not in lp_v2, "Corrections block nie powinien byc bez corrections"
+    print("get_lifestyle_prompt_v2 (gemini, bez korekcji): OK")
+
+    # 12. Test get_lifestyle_prompt_v2 z corrections
+    lp_v2_corr = get_lifestyle_prompt_v2(
+        LIFESTYLE_SCENES[2], test_dna,
+        corrections="Remove the soap dispenser. Make the bowl square."
+    )
+    assert "PREVIOUS ATTEMPT FAILED CHECK" in lp_v2_corr, "Brak corrections block"
+    assert "Remove the soap dispenser" in lp_v2_corr, "Brak tresci korekcji"
+    assert "granite (NOT marble)" in lp_v2_corr, "Brak countertop ze scene_config"
+    print("get_lifestyle_prompt_v2 (z korekcja): OK")
+
+    # 13. Test get_lifestyle_prompt_v2 z niepoprawnym JSON
+    lp_v2_bad = get_lifestyle_prompt_v2(LIFESTYLE_SCENES[0], "niepoprawny json")
+    assert "MUST include EXACTLY" in lp_v2_bad, "Prompt powinien dzialac mimo zlego JSON"
+    print("get_lifestyle_prompt_v2 (zly JSON): OK")
+
+    # 14. Test get_lifestyle_prompt_v2 model_type=flux
+    lp_flux = get_lifestyle_prompt_v2(LIFESTYLE_SCENES[0], test_dna, model_type="flux")
+    assert "Step 1" in lp_flux, "Flux: brak structured 5-step"
+    assert "Step 5" in lp_flux, "Flux: brak Step 5"
+    print("get_lifestyle_prompt_v2 (flux): OK")
+
+    # 15. Test get_selfcheck_prompt (v3.0 z nowymi wagami)
+    sc_prompt = get_selfcheck_prompt(test_dna)
+    assert "bowl_count_score" in sc_prompt, "Brak bowl_count_score w selfcheck"
+    assert "color_score" in sc_prompt, "Brak color_score w selfcheck"
+    assert "shape_score" in sc_prompt, "Brak shape_score w selfcheck"
+    assert "accessories_score" in sc_prompt, "Brak accessories_score w selfcheck"
+    assert "realism_score" in sc_prompt, "Brak realism_score w selfcheck"
+    assert "overall_score" in sc_prompt, "Brak overall_score w selfcheck"
+    assert "25%" in sc_prompt, "Brak wagi 25% bowl_count"
+    assert "30%" in sc_prompt, "Brak wagi 30% color"
+    assert ">= 8" in sc_prompt, "Brak progu akceptacji 8"
+    assert "differences" in sc_prompt, "Brak differences w selfcheck"
+    assert "corrections_needed" in sc_prompt, "Brak corrections_needed w selfcheck"
+    assert "PRODUCT DNA" in sc_prompt, "Brak Product DNA w selfcheck"
+    assert "TWO images" in sc_prompt, "Brak instrukcji o 2 obrazach"
+    assert "ONLY a JSON" in sc_prompt, "Brak instrukcji JSON-only"
+    print("get_selfcheck_prompt (v3.0): OK")
+
+    # 16. Test get_composite_packshot_prompt
+    products = [
+        {"name": "zlew granitowy czarny", "description": "80x50cm, 1 komora"},
+        {"name": "bateria czarno-zlota", "description": "wyciagana wylewka"},
+    ]
+    comp_prompt = get_composite_packshot_prompt(products, "top-down")
+    assert "Image 1 (zlew granitowy czarny)" in comp_prompt, "Brak nazwy Image 1"
+    assert "Image 2 (bateria czarno-zlota)" in comp_prompt, "Brak nazwy Image 2"
+    assert "2000x2000" in comp_prompt, "Brak rozdzielczosci 2000x2000"
+    assert "RGB 255, 255, 255" in comp_prompt, "Brak RGB bialego tla"
+    assert "Canon EOS R5" in comp_prompt, "Brak camera simulation"
+    assert "bird's eye" in comp_prompt, "Brak perspektywy top-down"
+    print("get_composite_packshot_prompt: OK")
+
+    # 17. Test get_composite_packshot_prompt (three-quarter)
+    comp_34 = get_composite_packshot_prompt(products, "three-quarter")
+    assert "45 degree" in comp_34, "Brak perspektywy three-quarter"
+    print("get_composite_packshot_prompt (three-quarter): OK")
+
+    # 18. Test blokow stalych
+    assert "Canon EOS R5" in DSLR_REALISM_BLOCK, "DSLR block brak Canon"
+    assert "5500K" in DSLR_REALISM_BLOCK, "DSLR block brak 5500K"
+    assert "sticker" in SHADOW_REFLECTION_BLOCK, "Shadow block brak sticker"
+    assert "moody" in BANNED_PHRASES_BLOCK, "Banned block brak moody"
+    assert "PRESERVATION" in PRESERVATION_LIST_BLOCK, "Preservation block brak"
+    print("Bloki stale v3.0: OK")
+
+    # 19. Test build_product_dna_enforcement
+    test_dna_dict = json.loads(test_dna)
+    enforcement = build_product_dna_enforcement(test_dna_dict)
+    assert "EXACTLY 1 bowl" in enforcement, "Enforcement: brak bowl_count"
+    assert "WITH drainboard" in enforcement, "Enforcement: brak drainboard"
+    assert "WITH faucet hole" in enforcement, "Enforcement: brak faucet hole"
+    assert "czarny nakrapiany" in enforcement, "Enforcement: brak koloru"
+    print("build_product_dna_enforcement: OK")
+
+    print(f"\nALL TESTS PASSED ({21} tests)")

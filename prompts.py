@@ -5,8 +5,11 @@ Obsługuje różne katalogi przez import z catalogs.py.
 """
 
 import json
+import logging
 import re
 from catalogs import get_kolor_map, get_kolory_per_element, get_seo_data, get_seo_key
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +147,74 @@ PRESERVATION_LIST_BLOCK = (
 )
 
 
-def build_product_dna_enforcement(dna: dict) -> str:
+def get_style_lock_block(style_lock_id: str | None) -> str:
+    """Reużywalny blok spójności stylu między obrazami jednego joba."""
+    lock_id = style_lock_id or "default-style-lock"
+    return (
+        f"=== STYLE LOCK (ID: {lock_id}) ===\n"
+        "Keep the same visual family across all images in this job:\n"
+        "- neutral commercial color grading (no cinematic tint),\n"
+        "- white balance around 5400K and consistent contrast curve,\n"
+        "- soft key light from 45° left with gentle opposite fill,\n"
+        "- realistic contact shadows, no synthetic hard edges,\n"
+        "- photoreal e-commerce look (not editorial mood).\n"
+        "If previous images exist for this STYLE LOCK ID, match their lighting softness, "
+        "perspective discipline, and color response."
+    )
+
+
+# Elementy niezbędne w realistycznej scenie kuchennej (auto-kompletowanie)
+ESSENTIAL_SCENE_ELEMENTS = {
+    "bateria": "color-matched kitchen faucet",
+    # syfon, deska do krojenia - nie widoczne w lifestyle overhead, pomijaj
+}
+
+
+def resolve_scene_elements(dna: dict, allow_auto_suggestions: bool = True) -> tuple[str, str, list[str]]:
+    """Centralna logika: co dodać do sceny, co wykluczyć, co auto-suggested.
+
+    Używana przez build_product_dna_enforcement(), get_lifestyle_prompt_v2()
+    i pipeline_lifestyle.py. Jedna funkcja = zero ryzyka rozjazdu.
+
+    Returns: (include_str, exclude_str, auto_suggested_list)
+    """
+    visible = dna.get("visible_elements", [])
+    not_present = dna.get("NOT_present", [])
+    color = dna.get("color", "")
+
+    # Sanityzacja: usuń z NOT_present elementy które są w visible (merge może dać konflikty)
+    visible_lower = {v.lower().strip() for v in visible}
+    not_present = [
+        e for e in not_present
+        if not any(v in e.lower() or e.lower() in v for v in visible_lower)
+    ]
+
+    auto_suggested = []
+    if allow_auto_suggestions:
+        for element, desc_tpl in ESSENTIAL_SCENE_ELEMENTS.items():
+            is_missing = any(element in e.lower() for e in not_present)
+            is_present = any(element in e.lower() for e in visible)
+            if is_missing and not is_present:
+                color_hint = f" in color matching {color}" if color else ""
+                suggestion = f"{desc_tpl}{color_hint}"
+                auto_suggested.append(suggestion)
+
+    include_items = list(visible) + auto_suggested
+    include_str = ", ".join(include_items) if include_items else "all elements from reference"
+
+    if allow_auto_suggestions:
+        filtered_exclude = [
+            e for e in not_present
+            if not any(key in e.lower() for key in ESSENTIAL_SCENE_ELEMENTS)
+        ]
+    else:
+        filtered_exclude = list(not_present)
+    exclude_str = ", ".join(filtered_exclude) if filtered_exclude else "nothing extra"
+
+    return include_str, exclude_str, auto_suggested
+
+
+def build_product_dna_enforcement(dna: dict, allow_auto_suggestions: bool = False) -> str:
     """Buduje blok PRODUCT DNA ENFORCEMENT z danych DNA."""
     bowl_count = dna.get("bowl_count", "unknown")
     shape = dna.get("bowl_shape", dna.get("shape", "unknown"))
@@ -152,13 +222,46 @@ def build_product_dna_enforcement(dna: dict) -> str:
     has_drainboard = dna.get("has_drainboard", False)
     has_faucet_hole = dna.get("has_faucet_hole", False)
     material_texture = dna.get("material_texture", "granitowy")
-    visible = dna.get("visible_elements", [])
-    not_present = dna.get("NOT_present", [])
 
     drainboard_rule = "WITH drainboard" if has_drainboard else "NO drainboard"
     faucet_hole_rule = "WITH faucet hole" if has_faucet_hole else "NO faucet hole"
-    visible_str = ", ".join(visible) if visible else "all elements from reference"
-    not_present_str = ", ".join(not_present) if not_present else "nothing extra"
+    visible_str, not_present_str, _ = resolve_scene_elements(
+        dna, allow_auto_suggestions=allow_auto_suggestions
+    )
+
+    mounting = dna.get("mounting_type", "wpuszczany") or "wpuszczany"
+    mounting_lower = mounting.lower().strip()
+
+    if mounting_lower in ("wpuszczany", "drop-in", "top-mount"):
+        mount_rule = (
+            "INSTALLATION (CRITICAL): The sink MUST be shown as DROP-IN / FLUSH-MOUNTED "
+            "into a precise rectangular cutout in the countertop. The sink rim sits flush "
+            "with or slightly above the countertop surface. The bottom part / mounting "
+            "trapezoid underneath MUST be completely HIDDEN below the countertop. "
+            "Only the top rim, bowl interior, and drainboard are visible from above. "
+            "The countertop surface seamlessly meets the sink edges. "
+            "NEVER show the sink sitting ON TOP of the counter like a box."
+        )
+    elif mounting_lower in ("nablatowy", "vessel", "sit-on"):
+        mount_rule = (
+            "INSTALLATION: The sink is a VESSEL / SIT-ON type. It sits ON TOP of the countertop "
+            "surface as a standalone basin. The full body of the sink is visible above the counter. "
+            "Show it naturally placed on the countertop with the plumbing connection going down "
+            "through a hole in the counter. This is correct - do NOT recess it into the counter."
+        )
+    elif mounting_lower in ("podwieszany", "undermount"):
+        mount_rule = (
+            "INSTALLATION (CRITICAL): The sink is UNDERMOUNT type. It is mounted BELOW the countertop. "
+            "The countertop edge is visible around the sink opening with NO rim. The stone/granite "
+            "countertop surface extends right to the edge of the cutout and the bowl drops below. "
+            "The sink rim is NOT visible from above. Only the bowl interior is seen through the cutout."
+        )
+    else:
+        logger.warning(f"Unknown mounting_type in Product DNA: '{mounting}'. Falling back to generic.")
+        mount_rule = (
+            f"Mounting type: {mounting}. Show the product installed in the most natural way "
+            f"for this mounting type."
+        )
 
     return (
         f"ABSOLUTE REQUIREMENT:\n"
@@ -166,7 +269,8 @@ def build_product_dna_enforcement(dna: dict) -> str:
         f"- {drainboard_rule}, {faucet_hole_rule}\n"
         f"- Color {color} with {material_texture}\n"
         f"- ALL visible_elements: {visible_str}\n"
-        f"- ZERO NOT_present: {not_present_str}"
+        f"- ZERO NOT_present: {not_present_str}\n"
+        f"- {mount_rule}"
     )
 
 
@@ -920,10 +1024,46 @@ LIFESTYLE_SCENES: list[dict] = [
 ]
 
 
+# --- Element exclusion block for composites ---
+_ELEMENT_EXCLUSION_MAP = {
+    "dozownik": "soap dispenser",
+    "bateria": "faucet",
+    "syfon": "siphon/drain assembly",
+    "ociekacz": "draining board",
+    "deska do krojenia": "cutting board",
+    "koszyk": "basket/colander",
+}
+
+
+def _build_exclusion_block(excluded_elements: list[str] | None) -> str:
+    """Buduje blok NEGATIVE dla elementow wykluczonych z kompozytu."""
+    if not excluded_elements:
+        return ""
+    translated = []
+    for el in excluded_elements:
+        el_lower = el.lower().strip()
+        for pl_key, en_val in _ELEMENT_EXCLUSION_MAP.items():
+            if pl_key in el_lower:
+                translated.append(en_val)
+                break
+        else:
+            translated.append(el)
+    if not translated:
+        return ""
+    items = ", ".join(translated)
+    return (
+        f"\nCRITICAL EXCLUSION: Do NOT add, generate, or include: {items}. "
+        f"These elements are NOT part of this product set. "
+        f"If you add any of them, the image will be rejected."
+    )
+
+
 def get_composite_packshot_prompt(
     products: list[dict],
     perspective: str = "top-down",
     thinking_level: str | None = "HIGH",
+    excluded_elements: list[str] | None = None,
+    style_lock_id: str | None = None,
 ) -> str:
     """Prompt do kompozytu zestawu (Gemini 3.1 Flash Image, do 10 ref images).
 
@@ -933,6 +1073,7 @@ def get_composite_packshot_prompt(
                  {"name": "bateria kuchenna czarno-zlota", "description": "wyciagana wylewka"}]
         perspective: "top-down" | "front" | "three-quarter"
         thinking_level: "HIGH" | "MINIMAL" | None (batch)
+        excluded_elements: lista elementow do wykluczenia z kompozytu (z NOT_present DNA)
     """
     perspective_map = {
         "top-down": "top-down (bird's eye) view, looking straight down",
@@ -951,19 +1092,48 @@ def get_composite_packshot_prompt(
         f"Image {i} ({p['name']})" for i, p in enumerate(products, 1)
     )
 
-    return f"""Pure white studio background (RGB 255, 255, 255) with subtle natural
-contact shadow at base. Product photographed with Canon EOS R5, 50mm
-f/1.8 lens, studio 3-point softbox lighting, 45-degree key light.
-Output: 2000x2000px (1:1 square). 8K UHD quality anchor.
+    excluded = [e.lower().strip() for e in (excluded_elements or [])]
+    has_faucet = any(
+        any(k in f"{p.get('name', '')} {p.get('description', '')}".lower() for k in ("bateria", "faucet", "tap"))
+        for p in products
+    )
+    faucet_excluded = any("bateria" in e or "faucet" in e or "tap" in e for e in excluded)
+    if has_faucet and not faucet_excluded:
+        faucet_rule = (
+            "If a faucet is part of the references, place it naturally and realistically in relation "
+            "to the sink and mounting holes."
+        )
+    else:
+        faucet_rule = "Do NOT add any faucet unless it is explicitly present in the reference images."
+    style_lock_block = get_style_lock_block(style_lock_id)
+
+    return f"""BACKGROUND LOCK (NON-NEGOTIABLE):
+The background must be uniform pure white #FFFFFF (RGB 255,255,255).
+No gray cast, no gradient, no texture, no countertop visibility.
+Only a subtle natural contact shadow directly under objects is allowed.
+
+CAMERA: Canon EOS R5, 100mm macro lens, f/8, ISO 100.
+LIGHTING: 3-point softbox setup, 45-degree key light, fill light from opposite side,
+backlight for edge separation. Even illumination, no harsh shadows on product surface.
+Output: 2000x2000px (1:1 square). 8K UHD quality.
 
 === REFERENCE IMAGES ===
 {ref_block}
 
-Using {using_clause}: compose a professional product set photograph
-showing all items together in {perspective_desc}.
+TASK: Using {using_clause}, compose a professional e-commerce product set photograph.
+Show ONLY the items from reference images together in {perspective_desc}.
+This is a product packshot for Allegro marketplace, NOT a lifestyle photo.
 
-The faucet should be naturally mounted on the sink (in the faucet hole
-if present). All accessories positioned as they would be installed.
+OBJECT SCOPE LOCK (NON-NEGOTIABLE):
+Render exactly the objects present in the provided references and product list.
+If an object is not explicitly listed, do not generate it.
+
+COMPOSITION:
+{faucet_rule}
+Accessories positioned exactly as they would be installed in real life.
+Product must fill 70-85% of the frame. Center the composition.
+
+{style_lock_block}
 
 {PRESERVATION_LIST_BLOCK}
 
@@ -971,7 +1141,11 @@ if present). All accessories positioned as they would be installed.
 
 NEGATIVE: Do NOT add items not present in reference images. Do NOT alter,
 stylize, or reinterpret any product feature. Do NOT add any text, labels,
-watermarks, or annotations. {BANNED_PHRASES_BLOCK}"""
+watermarks, or annotations. Do NOT add extra sink, extra faucet, soap dispenser,
+random kitchen props, decorative elements, or additional accessories.
+FORBIDDEN OBJECTS: {", ".join(excluded) if excluded else "none"}.
+{_build_exclusion_block(excluded_elements)}
+{BANNED_PHRASES_BLOCK}"""
 
 
 def get_product_dna_prompt() -> str:
@@ -1013,6 +1187,7 @@ def get_lifestyle_prompt_v2(
     product_dna_json: str,
     corrections: str = "",
     model_type: str = "gemini",
+    style_lock_id: str | None = None,
 ) -> str:
     """Prompt lifestyle v4.3 z DSLR realism, Product DNA, Shadow/Reflection.
 
@@ -1025,7 +1200,8 @@ def get_lifestyle_prompt_v2(
     no_text = "Do NOT add any text, labels, watermarks, or annotations to the image."
     negative = (
         "NEVER: text overlays, watermarks, plastic sheen on granite, blurry edges, "
-        "floating objects, AI artifacts, distorted proportions, extra faucets or sinks."
+        "floating objects, AI artifacts, distorted proportions, extra faucets, extra sinks, "
+        "soap dispensers, random props, fake accessories, duplicated objects."
     )
 
     # Parsuj Product DNA
@@ -1034,13 +1210,15 @@ def get_lifestyle_prompt_v2(
     except (json.JSONDecodeError, TypeError):
         dna = {}
 
-    visible = dna.get("visible_elements", [])
-    not_present = dna.get("NOT_present", [])
-    visible_str = ", ".join(visible) if visible else "all elements from the reference image"
-    not_present_str = ", ".join(not_present) if not_present else "nothing extra"
+    visible_str, not_present_str, _ = resolve_scene_elements(
+        dna, allow_auto_suggestions=False
+    )
 
     # Product DNA enforcement
-    dna_enforcement = build_product_dna_enforcement(dna) if dna else ""
+    dna_enforcement = build_product_dna_enforcement(
+        dna, allow_auto_suggestions=False
+    ) if dna else ""
+    style_lock_block = get_style_lock_block(style_lock_id)
 
     corrections_block = ""
     if corrections:
@@ -1052,13 +1230,25 @@ def get_lifestyle_prompt_v2(
     # LoRA: krotszy prompt z trigger word
     if model_type == "lora":
         from config import LORA_TRIGGER_WORD
-        return f"""{LORA_TRIGGER_WORD} granite sink in {dna.get('color', 'dark')} installed in \
+        _mounting = (dna.get("mounting_type") or "wpuszczany").lower().strip()
+        if _mounting in ("nablatowy", "vessel", "sit-on"):
+            _install_lora = "sitting on top of"
+            _install_desc = "Full body visible above counter."
+        elif _mounting in ("podwieszany", "undermount"):
+            _install_lora = "UNDERMOUNT installed below"
+            _install_desc = "Mounted below countertop surface. No rim visible from above, only bowl through cutout."
+        else:
+            _install_lora = "DROP-IN flush-mounted into a cutout in"
+            _install_desc = "Bottom mounting part completely hidden below counter surface. Only top rim, bowl, and drainboard visible."
+        return f"""{LORA_TRIGGER_WORD} granite sink in {dna.get('color', 'dark')} {_install_lora} \
 {scene_config.get('countertop', 'wooden')} countertop. \
+{_install_desc} \
 {scene_config.get('perspective', 'eye-level')}. \
 {scene_config.get('details', 'kitchen accessories')}. \
 {DSLR_REALISM_BLOCK} {MATERIAL_ACCURACY_BLOCK} \
 {dna_enforcement}
-{SHADOW_REFLECTION_BLOCK} {BANNED_PHRASES_BLOCK} {no_text}{corrections_block}"""
+{style_lock_block}
+{SHADOW_REFLECTION_BLOCK} {BANNED_PHRASES_BLOCK} {negative} {no_text}{corrections_block}"""
 
     # Flux: structured 5-step prompt
     if model_type == "flux":
@@ -1067,10 +1257,10 @@ Step 2 (STRUCTURE): Scene composition: {scene_config.get('perspective', 'eye-lev
 {scene_config.get('countertop', 'wooden')} countertop, {scene_config.get('details', 'kitchen accessories')}.
 Step 3 (CINEMATOGRAPHY): Canon EOS R5, 85mm f/1.4, natural daylight 5500K.
 Step 4 (RENDER): Generate photorealistic kitchen scene with product installed in countertop.
-Step 5 (VERIFY): {PRESERVATION_LIST_BLOCK}
-
 {dna_enforcement}
+Step 5 (VERIFY): {PRESERVATION_LIST_BLOCK}
 {MATERIAL_ACCURACY_BLOCK}
+{style_lock_block}
 {SHADOW_REFLECTION_BLOCK}
 {BANNED_PHRASES_BLOCK}
 {negative}
@@ -1092,8 +1282,6 @@ The transparent PNG of the real product is provided as input. You MUST use it as
 === PRODUCT DNA (from analysis of the original product) ===
 {product_dna_json}
 
-=== {dna_enforcement} ===
-
 === FIDELITY RULES (CRITICAL) ===
 The product shape, color, mounting type, drain position, bowl count, and bowl shape MUST match EXACTLY what is described in the Product DNA above.
 MUST include EXACTLY these elements: {visible_str}
@@ -1101,17 +1289,29 @@ Do NOT add: {not_present_str}
 Do NOT invent, add, remove, or alter ANY part of the product.
 {PRESERVATION_LIST_BLOCK}
 
+=== OBJECT SCOPE LOCK ===
+MUST include ONLY: {visible_str}
+MUST NOT include: {not_present_str}
+Do not invent any accessory, attachment, or decorative object not listed above.
+If an excluded object appears, the image is invalid.
+
 === SCENE ===
 Scene: {scene_config.get('name', 'kitchen lifestyle')}
 Countertop: {scene_config.get('countertop', 'wooden')}
 Perspective: {scene_config.get('perspective', 'top-down overhead view')}
 Props/details: {scene_config.get('details', 'minimal kitchen accessories')}
 
+=== SINK INSTALLATION (CRITICAL - read Product DNA mounting_type) ===
+{dna_enforcement}
+
 === CAMERA & LIGHTING ===
 {DSLR_REALISM_BLOCK}
 
 === MATERIAL ===
 {MATERIAL_ACCURACY_BLOCK}
+
+=== STYLE LOCK ===
+{style_lock_block}
 
 === SHADOW & REFLECTION ===
 {SHADOW_REFLECTION_BLOCK}
@@ -1129,6 +1329,33 @@ def get_selfcheck_prompt(product_dna_json: str) -> str:
     Weighted scoring: bowl_count 25%, color 30%, shape 15%, accessories 10%, realism 20%.
     Próg akceptacji: 8/10.
     """
+    # Dynamiczne pytanie #9 na podstawie mounting_type z DNA
+    try:
+        _dna = json.loads(product_dna_json) if product_dna_json else {}
+    except (json.JSONDecodeError, TypeError):
+        _dna = {}
+    _mount = (_dna.get("mounting_type") or "wpuszczany").lower().strip()
+
+    if _mount in ("nablatowy", "vessel", "sit-on"):
+        q9 = (
+            "9. Is the sink correctly shown as a VESSEL/SIT-ON type, sitting ON TOP of the countertop? "
+            "The full body should be visible above the counter surface. If the sink is incorrectly "
+            "recessed into the counter, this is a CRITICAL failure (-3 points from realism_score)."
+        )
+    elif _mount in ("podwieszany", "undermount"):
+        q9 = (
+            "9. Is the sink correctly shown as UNDERMOUNT, mounted BELOW the countertop? "
+            "The countertop edge should be visible around the opening with NO rim. "
+            "If the sink rim is visible on top, this is a CRITICAL failure (-3 points from realism_score)."
+        )
+    else:
+        q9 = (
+            "9. Is the sink properly RECESSED into the countertop cutout (drop-in installation)? "
+            "The bottom mounting part (trapezoid shape) should be HIDDEN below the counter. "
+            "If the sink appears to sit ON TOP of the counter like a box, "
+            "this is a CRITICAL failure (-3 points from realism_score)."
+        )
+
     return f"""You are a quality control inspector for e-commerce product photography on Allegro.
 
 You will receive TWO images:
@@ -1150,6 +1377,7 @@ Compare with the ORIGINAL IMAGE, not just the text description.
 6. Are there ANY elements added that are NOT in the original? (faucet, dispenser, accessories)
 7. Are there ANY elements MISSING that ARE in the original?
 8. Does the product look realistically installed or pasted/floating (sticker effect)?
+{q9}
 
 === SCORING CRITERIA (weighted) ===
 Score each dimension 1-10:
@@ -1176,7 +1404,7 @@ Return ONLY a JSON object. No extra text, no markdown code blocks:
   "accessories_score": <1-10>,
   "realism_score": <1-10>,
   "overall_score": <1-10>,
-  "answers": ["answer to each of the 8 questions above, in order"],
+  "answers": ["answer to each of the 9 questions above, in order"],
   "differences": ["lista konkretnych roznic po polsku, np. dodano dozownik ktorego nie ma w oryginale"],
   "corrections_needed": "English instructions for retry, e.g. Remove the soap dispenser. Make the bowl square not rectangular."
 }}
@@ -1325,8 +1553,8 @@ if __name__ == "__main__":
     assert "zlew" in lp_v2, "Brak Product DNA w lifestyle prompt"
     assert "Do NOT add" in lp_v2, "Brak negative list w lifestyle prompt"
     assert "MUST include EXACTLY" in lp_v2, "Brak positive list w lifestyle prompt"
-    assert "bateria" in lp_v2, "NOT_present nie wstrzyknięte"
     assert "FIDELITY RULES" in lp_v2, "Brak fidelity rules"
+    assert "STYLE LOCK" in lp_v2, "Brak STYLE LOCK block"
     assert "DSLR" in lp_v2 or "Canon EOS R5" in lp_v2, "Brak DSLR realism block"
     assert "SHADOW" in lp_v2, "Brak Shadow/Reflection block"
     assert "PRESERVATION" in lp_v2, "Brak Preservation block"
@@ -1382,8 +1610,11 @@ if __name__ == "__main__":
     assert "Image 1 (zlew granitowy czarny)" in comp_prompt, "Brak nazwy Image 1"
     assert "Image 2 (bateria czarno-zlota)" in comp_prompt, "Brak nazwy Image 2"
     assert "2000x2000" in comp_prompt, "Brak rozdzielczosci 2000x2000"
-    assert "RGB 255, 255, 255" in comp_prompt, "Brak RGB bialego tla"
-    assert "Canon EOS R5" in comp_prompt, "Brak camera simulation"
+    assert "#FFFFFF" in comp_prompt, "Brak bialego tla #FFFFFF"
+    assert "BACKGROUND LOCK" in comp_prompt, "Brak BACKGROUND LOCK"
+    assert "OBJECT SCOPE LOCK" in comp_prompt, "Brak OBJECT SCOPE LOCK"
+    assert "STYLE LOCK" in comp_prompt, "Brak STYLE LOCK"
+    assert "Canon EOS R5" in comp_prompt, "Brak Canon EOS R5"
     assert "bird's eye" in comp_prompt, "Brak perspektywy top-down"
     print("get_composite_packshot_prompt: OK")
 
@@ -1391,6 +1622,17 @@ if __name__ == "__main__":
     comp_34 = get_composite_packshot_prompt(products, "three-quarter")
     assert "45 degree" in comp_34, "Brak perspektywy three-quarter"
     print("get_composite_packshot_prompt (three-quarter): OK")
+
+    # 17b. Test excluded_elements w composite prompt
+    comp_excl = get_composite_packshot_prompt(
+        products, excluded_elements=["dozownik", "deska do krojenia"]
+    )
+    assert "soap dispenser" in comp_excl, "Brak soap dispenser w exclusion block"
+    assert "cutting board" in comp_excl, "Brak cutting board w exclusion block"
+    assert "CRITICAL EXCLUSION" in comp_excl, "Brak CRITICAL EXCLUSION"
+    comp_no_excl = get_composite_packshot_prompt(products, excluded_elements=[])
+    assert "CRITICAL EXCLUSION" not in comp_no_excl, "Puste excluded nie powinno generowac bloku"
+    print("get_composite_packshot_prompt (excluded_elements): OK")
 
     # 18. Test blokow stalych
     assert "Canon EOS R5" in DSLR_REALISM_BLOCK, "DSLR block brak Canon"
@@ -1409,4 +1651,66 @@ if __name__ == "__main__":
     assert "czarny nakrapiany" in enforcement, "Enforcement: brak koloru"
     print("build_product_dna_enforcement: OK")
 
-    print(f"\nALL TESTS PASSED ({21} tests)")
+    # 20. Test resolve_scene_elements: auto-suggest baterii
+    vis, exc, auto = resolve_scene_elements({
+        "visible_elements": ["zlew", "ociekacz"],
+        "NOT_present": ["bateria", "dozownik", "deska do krojenia"],
+        "color": "czarny nakrapiany",
+    })
+    assert "faucet" in vis, f"Auto-suggested bateria powinna byc w visible_str: {vis}"
+    assert "bateria" not in exc, f"Bateria NIE powinna byc w exclude_str: {exc}"
+    assert "dozownik" in exc, f"Dozownik powinien byc w exclude_str: {exc}"
+    assert len(auto) == 1, f"Oczekiwano 1 auto-suggested, jest {len(auto)}"
+    print("resolve_scene_elements (auto-suggest baterii): OK")
+
+    vis_gen, exc_gen, auto_gen = resolve_scene_elements({
+        "visible_elements": ["zlew", "ociekacz"],
+        "NOT_present": ["bateria", "dozownik"],
+    }, allow_auto_suggestions=False)
+    assert "faucet" not in vis_gen, f"Tryb generacji: brak auto-suggest baterii: {vis_gen}"
+    assert "bateria" in exc_gen, f"Tryb generacji: bateria ma byc w exclude: {exc_gen}"
+    assert len(auto_gen) == 0, f"Tryb generacji: auto-suggest powinien byc pusty: {auto_gen}"
+    print("resolve_scene_elements (generation mode, no auto): OK")
+
+    # 21. Test resolve_scene_elements: bateria present = brak auto-suggest
+    vis2, exc2, auto2 = resolve_scene_elements({
+        "visible_elements": ["zlew", "bateria chromowana"],
+        "NOT_present": ["dozownik"],
+        "color": "czarny",
+    })
+    assert len(auto2) == 0, f"Nie powinno byc auto-suggest gdy bateria present: {auto2}"
+    assert "bateria chromowana" in vis2, f"Bateria powinna byc w visible: {vis2}"
+    print("resolve_scene_elements (bateria present): OK")
+
+    # 22. Test resolve_scene_elements: puste dane
+    vis3, exc3, auto3 = resolve_scene_elements({})
+    assert vis3 == "all elements from reference", f"Puste dane: visible powinno byc default: {vis3}"
+    assert exc3 == "nothing extra", f"Puste dane: exclude powinno byc default: {exc3}"
+    assert len(auto3) == 0, f"Puste dane: brak auto-suggest: {auto3}"
+    print("resolve_scene_elements (puste dane): OK")
+
+    # 23. Test enforcement bez auto-suggest (default)
+    test_dna_no_faucet = {
+        **test_dna_dict,
+        "visible_elements": ["zlew"],
+        "NOT_present": ["bateria", "dozownik"],
+    }
+    enf2 = build_product_dna_enforcement(test_dna_no_faucet)
+    assert "color-matched kitchen faucet" not in enf2, f"Default generacji: brak auto-suggest baterii: {enf2[:200]}"
+    assert "ZERO NOT_present:" in enf2 and "bateria" in enf2 and "dozownik" in enf2, f"Dozownik/bateria w ZERO: {enf2[:300]}"
+    enf3 = build_product_dna_enforcement(test_dna_no_faucet, allow_auto_suggestions=True)
+    assert "faucet" in enf3, f"Tryb UI: powinien zawierac auto-suggested baterie: {enf3[:200]}"
+    print("build_product_dna_enforcement (no-auto + optional auto): OK")
+
+    # 24. Test sanityzacja: element w visible I NOT_present jednoczesnie
+    vis_san, exc_san, auto_san = resolve_scene_elements({
+        "visible_elements": ["zlew", "bateria chromowana"],
+        "NOT_present": ["bateria", "dozownik"],
+        "color": "czarny",
+    })
+    assert len(auto_san) == 0, f"Sanityzacja: bateria w visible = brak auto-suggest: {auto_san}"
+    assert "bateria" not in exc_san, f"Sanityzacja: bateria w visible nie powinna byc w exclude: {exc_san}"
+    assert "dozownik" in exc_san, f"Sanityzacja: dozownik powinien pozostac: {exc_san}"
+    print("resolve_scene_elements (sanityzacja visible vs NOT_present): OK")
+
+    print(f"\nALL TESTS PASSED ({26} tests)")

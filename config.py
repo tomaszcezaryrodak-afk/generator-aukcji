@@ -12,6 +12,14 @@ def get_secret(key, default=""):
     return os.environ.get(key, default)
 
 
+def get_bool(key: str, default: bool) -> bool:
+    """Pobiera bool z env (1/true/yes/on)."""
+    raw = os.environ.get(key)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 # --- API Keys ---
 GEMINI_API_KEY = get_secret("GEMINI_API_KEY", "")
 OPENAI_API_KEY = get_secret("OPENAI_API_KEY", "")
@@ -33,6 +41,7 @@ OPENAI_IMAGE_MODEL = get_secret("OPENAI_IMAGE_MODEL", "gpt-image-1.5")
 KONTEXT_MAX_MODEL = "fal-ai/flux-pro/kontext/max"
 KONTEXT_PRO_MODEL = "fal-ai/flux-pro/kontext"
 FLUX_2_LORA_MODEL = "fal-ai/flux-2/lora"
+FLUX_2_LORA_EDIT_MODEL = "fal-ai/flux-2/lora/edit"
 FLUX_2_PRO_EDIT_MODEL = "fal-ai/flux-2-pro/edit"
 KLING_O3_MODEL = "fal-ai/kling-image/o3/text-to-image"
 FLUX_2_TRAINER_MODEL = "fal-ai/flux-2-trainer"
@@ -43,10 +52,18 @@ IMAGE_MODEL_FALLBACK_1 = "flux-2-lora"
 IMAGE_MODEL_FALLBACK_2 = "gemini-flash-image"
 IMAGE_MODEL_FALLBACK_3 = "gemini-pro-image"
 
+# --- Feature flags (v5.1) ---
+LORA_PRIMARY_ENABLED = get_bool("LORA_PRIMARY_ENABLED", True)
+LORA_EDIT_ENABLED = get_bool("LORA_EDIT_ENABLED", True)
+WHITE_BG_GATE_ENABLED = get_bool("WHITE_BG_GATE_ENABLED", True)
+WHITE_BG_AUTOFIX_ENABLED = get_bool("WHITE_BG_AUTOFIX_ENABLED", True)
+MODEL_LOCK_MIN_QUALITY = float(get_secret("MODEL_LOCK_MIN_QUALITY", "0.6"))
+WHITE_BG_MAX_RETRY = int(get_secret("WHITE_BG_MAX_RETRY", "1"))
+
 # --- LoRA ---
 LORA_MODEL_PATH = get_secret("LORA_MODEL_PATH", "")
 LORA_TRIGGER_WORD = "granite_sink_premium"
-LORA_WEIGHT = 1.0
+LORA_WEIGHT = 0.75
 
 # --- LoRA Training ---
 LORA_TRAINING_STEPS = 1000

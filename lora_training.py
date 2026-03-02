@@ -143,10 +143,18 @@ class LoRATrainer:
         return result
 
     async def validate(
-        self, lora_url: str, test_prompts: list[str] | None = None
+        self, lora_url: str, test_prompts: list[str] | None = None,
+        scale: float | None = None,
     ) -> dict:
         """Generuje obrazy testowe z i bez LoRA do manualnej weryfikacji."""
         import httpx
+
+        if scale is None:
+            try:
+                from config import LORA_WEIGHT
+                scale = LORA_WEIGHT
+            except ImportError:
+                scale = 0.75
 
         prompts = test_prompts or DEFAULT_TEST_PROMPTS
         client = self._get_client()
@@ -168,7 +176,7 @@ class LoRATrainer:
                         self.config.inference_model,
                         arguments={
                             "prompt": p,
-                            "loras": [{"path": lora_url, "scale": 0.9}],
+                            "loras": [{"path": lora_url, "scale": scale}],
                             "image_size": "landscape_16_9",
                             "num_images": 1,
                         },

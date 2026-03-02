@@ -168,6 +168,9 @@ class ApiClient {
   // Generate (60s timeout - AI processing needs more time)
   async startGeneration(data: {
     session_id: string;
+    catalog_key?: string;
+    kategoria?: string;
+    specyfikacja?: string;
     colors?: Record<string, string>;
     features?: Record<string, string>;
     corrections?: string;

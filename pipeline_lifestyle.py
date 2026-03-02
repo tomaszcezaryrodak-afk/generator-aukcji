@@ -17,6 +17,7 @@ Env vars:
 """
 
 import asyncio
+import hashlib
 import io
 import json
 import os
@@ -35,12 +36,18 @@ try:
     from rembg import remove as rembg_remove, new_session as rembg_new_session
 
     REMBG_AVAILABLE = True
-except ImportError:
+except Exception:
     REMBG_AVAILABLE = False
     print("[WARN] rembg niedostępne. pip install rembg[cpu]")
 
 from google import genai
 from google.genai import types
+from prompts import (
+    resolve_scene_elements,
+    get_lifestyle_prompt_v2,
+    LIFESTYLE_SCENES as SHARED_LIFESTYLE_SCENES,
+)
+from image_generators import generate_with_fallback, get_lifestyle_generators
 
 # --- Konfiguracja ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
@@ -84,6 +91,9 @@ LIFESTYLE_SCENES = [
         "details": "water droplets on surface, visible texture of countertop and product",
     },
 ]
+
+# Używaj wspólnych scen z prompts.py, aby pipeline standalone i API miały ten sam zestaw.
+LIFESTYLE_SCENES = SHARED_LIFESTYLE_SCENES
 
 
 # ---------------------------------------------------------------------------
@@ -259,12 +269,7 @@ def build_lifestyle_prompt(
     except (json.JSONDecodeError, TypeError):
         dna = {}
 
-    visible = dna.get("visible_elements", [])
-    not_present = dna.get("NOT_present", [])
-    visible_str = (
-        ", ".join(visible) if visible else "all elements from the reference image"
-    )
-    not_present_str = ", ".join(not_present) if not_present else "nothing extra"
+    visible_str, not_present_str, _ = resolve_scene_elements(dna)
 
     corrections_block = ""
     if corrections:
@@ -449,6 +454,7 @@ async def run_pipeline(
     input_path: str,
     output_dir: str,
     max_scenes: int = 4,
+    seed: int | None = None,
 ) -> dict:
     """Pełny pipeline: packshot -> 2 packshoty + N lifestyle."""
     if not GEMINI_API_KEY:
@@ -463,6 +469,7 @@ async def run_pipeline(
     stats = {
         "input": input_path,
         "output_dir": output_dir,
+        "seed": seed,
         "image_api_calls": 0,
         "text_api_calls": 0,
         "retries": 0,
@@ -502,18 +509,19 @@ async def run_pipeline(
     dna_path.write_text(product_dna, encoding="utf-8")
 
     try:
-        dna_parsed = json.loads(product_dna)
-        print(f"  Typ: {dna_parsed.get('product_type', '?')}")
-        print(f"  Kolor: {dna_parsed.get('color', '?')}")
-        print(f"  Kształt: {dna_parsed.get('shape', '?')}")
-        print(f"  Montaż: {dna_parsed.get('mounting_type', '?')}")
-        visible = dna_parsed.get("visible_elements", [])
-        not_present = dna_parsed.get("NOT_present", [])
+        dna_dict = json.loads(product_dna)
+        print(f"  Typ: {dna_dict.get('product_type', '?')}")
+        print(f"  Kolor: {dna_dict.get('color', '?')}")
+        print(f"  Kształt: {dna_dict.get('shape', '?')}")
+        print(f"  Montaż: {dna_dict.get('mounting_type', '?')}")
+        visible = dna_dict.get("visible_elements", [])
+        not_present = dna_dict.get("NOT_present", [])
         if visible:
             print(f"  Widoczne: {', '.join(visible)}")
         if not_present:
             print(f"  Brak: {', '.join(not_present)}")
     except json.JSONDecodeError:
+        dna_dict = {}
         print("  [WARN] Product DNA nie jest poprawnym JSON")
 
     await asyncio.sleep(RATE_LIMIT_SEC)
@@ -531,24 +539,68 @@ async def run_pipeline(
     # Krok 4+5+6: Lifestyle + Self-check + Retry
     print(f"\n[5/6] Generowanie lifestyle ({len(scenes)} scen)...")
     reference_images = [transparent]
+    lifestyle_generators = get_lifestyle_generators()
+    locked_model: str | None = None
+
+    if seed is None:
+        seed_material = (
+            f"{input_path}|{dna_dict.get('product_type', '')}|"
+            f"{dna_dict.get('color', '')}|{dna_dict.get('shape', '')}|{product_dna}"
+        )
+        base_seed = int(hashlib.sha256(seed_material.encode("utf-8")).hexdigest()[:8], 16)
+    else:
+        base_seed = int(seed)
+    style_lock_id = hashlib.sha1(
+        f"{base_seed}|{dna_dict.get('product_type', '')}|{dna_dict.get('color', '')}".encode("utf-8")
+    ).hexdigest()[:12]
+    stats["seed"] = base_seed
+    stats["style_lock_id"] = style_lock_id
+    print(f"  Seed bazowy: {base_seed}")
+    print(f"  Style lock: {style_lock_id}")
 
     for idx, scene in enumerate(scenes):
         scene_name = scene["name"]
         print(f"\n  --- Scena {idx + 1}/{len(scenes)}: {scene_name} ---")
 
-        prompt = build_lifestyle_prompt(scene, product_dna)
         best_score = 0
         best_img = None
-        best_differences = []
+        best_model = "unknown"
+        latest_corrections = ""
 
         for attempt in range(1 + MAX_RETRIES):
-            gen_img = await asyncio.to_thread(
-                generate_image,
-                client,
-                prompt,
-                reference_images,
-                f"{scene_name} (próba {attempt + 1})",
+            attempt_seed = (base_seed + idx * 101 + attempt * 17) & 0x7FFFFFFF
+            active_chain = (
+                [g for g in lifestyle_generators if g.name() == locked_model]
+                if locked_model
+                else lifestyle_generators
             )
+            prompt_factory = lambda gen, corr=latest_corrections: get_lifestyle_prompt_v2(
+                scene,
+                product_dna,
+                corrections=corr,
+                model_type=(
+                    "lora" if "lora" in gen.name().lower()
+                    else "flux" if ("flux" in gen.name().lower() or "kontext" in gen.name().lower())
+                    else "gpt" if "gpt" in gen.name().lower()
+                    else "gemini"
+                ),
+                style_lock_id=style_lock_id,
+            )
+            gen_img, gen_model, _gen_cost = await generate_with_fallback(
+                active_chain,
+                prompt="",
+                reference_images=reference_images,
+                seed=attempt_seed,
+                prompt_factory=prompt_factory,
+            )
+            if gen_img is None and locked_model:
+                gen_img, gen_model, _gen_cost = await generate_with_fallback(
+                    lifestyle_generators,
+                    prompt="",
+                    reference_images=reference_images,
+                    seed=attempt_seed,
+                    prompt_factory=prompt_factory,
+                )
             stats["image_api_calls"] += 1
 
             if not gen_img:
@@ -570,7 +622,9 @@ async def run_pipeline(
             if score >= best_score:
                 best_score = score
                 best_img = gen_img
-                best_differences = differences
+                best_model = gen_model
+            if locked_model is None and (score / 10.0) > 0.6:
+                locked_model = gen_model
 
             if score >= RETRY_THRESHOLD:
                 break
@@ -581,9 +635,7 @@ async def run_pipeline(
                     f"  [RETRY] Score {score} < {RETRY_THRESHOLD}, "
                     f"regeneracja z korektami (próba {attempt + 2})..."
                 )
-                prompt = build_lifestyle_prompt(
-                    scene, product_dna, corrections=corrections
-                )
+                latest_corrections = corrections
                 await asyncio.sleep(RATE_LIMIT_SEC)
 
         # Zapisz najlepszy wynik
@@ -605,7 +657,7 @@ async def run_pipeline(
             stats["quality_metrics"][scene_name] = qm
 
             status = "PASS" if best_score >= 7 else "WARN"
-            print(f"  [{status}] {key}.png (score: {best_score}/10)")
+            print(f"  [{status}] {key}.png (score: {best_score}/10, model: {best_model})")
         else:
             print(f"  [SKIP] {scene_name}: nie udało się wygenerować")
 
@@ -654,7 +706,7 @@ async def run_pipeline(
 # ---------------------------------------------------------------------------
 
 
-async def batch_pipeline(input_dir: str, output_base: str, max_scenes: int = 4):
+async def batch_pipeline(input_dir: str, output_base: str, max_scenes: int = 4, seed: int | None = None):
     """Przetwarza wszystkie packshoty z katalogu."""
     input_path = Path(input_dir)
     extensions = {".jpg", ".jpeg", ".png", ".webp"}
@@ -677,7 +729,8 @@ async def batch_pipeline(input_dir: str, output_base: str, max_scenes: int = 4):
         print(f"{'#' * 60}")
 
         try:
-            stats = await run_pipeline(str(f), output_dir, max_scenes=max_scenes)
+            product_seed = None if seed is None else int(seed) + i - 1
+            stats = await run_pipeline(str(f), output_dir, max_scenes=max_scenes, seed=product_seed)
             all_stats.append(stats)
         except Exception as e:
             print(f"  [ERROR] {product_name}: {e}")
@@ -724,18 +777,19 @@ if __name__ == "__main__":
     group.add_argument("--batch", help="Katalog z packshotami (batch processing)")
     parser.add_argument("--output", default="./output", help="Katalog wyjściowy")
     parser.add_argument(
-        "--scenes", type=int, default=4, choices=[1, 2, 3, 4],
+        "--scenes", type=int, default=4, choices=[1, 2, 3, 4, 5, 6],
         help="Liczba scen lifestyle (default: 4)",
     )
+    parser.add_argument("--seed", type=int, default=None, help="Seed bazowy (opcjonalny)")
     args = parser.parse_args()
 
     if args.input:
         if not Path(args.input).exists():
             print(f"BŁĄD: Plik nie istnieje: {args.input}")
             sys.exit(1)
-        asyncio.run(run_pipeline(args.input, args.output, max_scenes=args.scenes))
+        asyncio.run(run_pipeline(args.input, args.output, max_scenes=args.scenes, seed=args.seed))
     else:
         if not Path(args.batch).is_dir():
             print(f"BŁĄD: Katalog nie istnieje: {args.batch}")
             sys.exit(1)
-        asyncio.run(batch_pipeline(args.batch, args.output, max_scenes=args.scenes))
+        asyncio.run(batch_pipeline(args.batch, args.output, max_scenes=args.scenes, seed=args.seed))

@@ -90,7 +90,7 @@ export default class ErrorBoundary extends Component<Props, State> {
             Jeśli problem się powtarza, odśwież stronę lub skontaktuj się z administratorem.
             Postęp analizy jest zapisany automatycznie.
           </p>
-          <p className="text-[9px] text-muted-foreground/30 font-mono">v4.3</p>
+          <p className="text-[9px] text-muted-foreground/30 font-mono">v4.3.3</p>
         </div>
       );
     }

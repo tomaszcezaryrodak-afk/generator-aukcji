@@ -6,6 +6,7 @@ Stack: FastAPI + Gemini API + FAL.AI + SSE.
 
 import asyncio
 import base64
+import hashlib
 import hmac
 import html as html_lib
 import io
@@ -38,6 +39,8 @@ from config import (
     MAX_CONCURRENT_SESSIONS,
     COST_GEMINI_TEXT_USD, COST_GEMINI_PRO_IMAGE_USD, USD_TO_PLN,
     GEMINI_API_KEY, FAL_AI_API_KEY, APP_PASSWORD,
+    WHITE_BG_GATE_ENABLED, WHITE_BG_AUTOFIX_ENABLED, WHITE_BG_MAX_RETRY,
+    MODEL_LOCK_MIN_QUALITY,
 )
 from sessions import (
     SessionData, sessions, create_session, get_session, cleanup_expired,
@@ -62,7 +65,7 @@ except ImportError:
 try:
     from rembg import remove as rembg_remove, new_session as rembg_new_session
     REMBG_AVAILABLE = True
-except ImportError:
+except Exception:
     REMBG_AVAILABLE = False
 
 # Module-level rembg session (model ładowany raz)
@@ -108,7 +111,7 @@ from prompts import (
 from image_generators import (
     PillowPackshotGenerator, GeminiFlashImageGenerator,
     generate_with_fallback, get_lifestyle_generators, get_composite_generators,
-    get_provider_status,
+    get_provider_status, evaluate_white_background, enforce_pure_white_background,
 )
 from lora_training import LoRATrainer, LoRAConfig, quick_train
 from baselinker import send_to_baselinker, check_sku_exists, bl_request
@@ -402,6 +405,74 @@ async def analyze_product_dna(client, pil_images):
                     text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
                 return text
     return "{}"
+
+
+async def analyze_product_dna_multi(client, pil_images):
+    """Analizuje WSZYSTKIE zdjęcia w batchach po 2, łączy wyniki.
+
+    Jeśli <= 2 zdjęć, deleguje do analyze_product_dna() bez zmian.
+    Dla > 2 zdjęć: batch po 2, merge wyników (UNION visible, INTERSECTION not_present).
+    Rate limit RATE_LIMIT_SEC między batchami.
+    """
+    if not pil_images:
+        return "{}"
+
+    if len(pil_images) <= 2:
+        return await analyze_product_dna(client, pil_images)
+
+    all_results = []
+    for i in range(0, len(pil_images), 2):
+        batch = pil_images[i:i + 2]
+        try:
+            dna_json = await analyze_product_dna(client, batch)
+            all_results.append(dna_json)
+        except Exception as e:
+            logger.warning("DNA batch %d failed: %.200s", i // 2, e)
+        # Rate limit między batchami (Gemini throttling)
+        if i + 2 < len(pil_images):
+            await asyncio.sleep(RATE_LIMIT_SEC)
+
+    if not all_results:
+        return "{}"
+
+    return merge_product_dna(all_results)
+
+
+def merge_product_dna(dna_jsons: list[str]) -> str:
+    """Łączy DNA z wielu batchów. Primary = pierwszy batch."""
+    parsed = []
+    for j in dna_jsons:
+        try:
+            parsed.append(json.loads(j))
+        except (json.JSONDecodeError, TypeError):
+            continue
+    if not parsed:
+        return "{}"
+
+    merged = dict(parsed[0])  # Primary batch = główny produkt
+
+    # UNION visible_elements (deduplikacja case-insensitive, zachowanie oryginału)
+    seen_lower = set()
+    all_visible = []
+    for d in parsed:
+        for el in d.get("visible_elements", []):
+            key = el.lower().strip()
+            if key not in seen_lower:
+                seen_lower.add(key)
+                all_visible.append(el.strip())
+    merged["visible_elements"] = sorted(all_visible, key=str.lower)
+
+    # INTERSECTION NOT_present (brakujący TYLKO jeśli brak we WSZYSTKICH batchach)
+    not_present_sets = [
+        {e.lower().strip() for e in d.get("NOT_present", [])}
+        for d in parsed
+    ]
+    common_missing = not_present_sets[0]
+    for s in not_present_sets[1:]:
+        common_missing &= s
+    merged["NOT_present"] = sorted(common_missing)
+
+    return json.dumps(merged, ensure_ascii=False)
 
 
 async def run_selfcheck(client, original_img, generated_img, product_dna_json):
@@ -909,14 +980,14 @@ async def generate(request: Request, session: SessionData = Depends(require_auth
         except Exception:
             raise HTTPException(400, "Nieprawidłowe dane JSON")
 
-        # React frontend wysyła: { colors, features, corrections }
+        # React frontend wysyła: { colors, features, corrections, catalog_key? }
         # Reszta danych pochodzi z session.last_analysis
         _analysis = session.last_analysis or {}
         colors = body.get("colors", {})
 
-        catalog_key = _analysis.get("catalog_key", "")
-        kategoria = ""
-        specyfikacja = _analysis.get("specyfikacja", "")
+        catalog_key = _analysis.get("catalog_key", "") or body.get("catalog_key", "")
+        kategoria = _analysis.get("kategoria", "") or body.get("kategoria", "")
+        specyfikacja = _analysis.get("specyfikacja", "") or body.get("specyfikacja", "")
         kolor_zlew = colors.get("zlew", "Czarny nakrapiany")
         kolor_bateria = colors.get("bateria", "Czarno-zlota")
         kolor_syfon = colors.get("syfon", "Zloty")
@@ -1820,6 +1891,94 @@ def _images_dict_to_list(images_dict: dict[str, str]) -> list[dict]:
     return result
 
 
+def _compute_job_seed(job_id: str, dna: dict) -> int:
+    """Deterministyczny seed bazowy per job + Product DNA."""
+    material = "|".join(
+        [
+            job_id,
+            str(dna.get("product_type", "")),
+            str(dna.get("color", "")),
+            str(dna.get("shape", "")),
+            str(dna.get("mounting_type", "")),
+            ",".join(sorted(str(v) for v in dna.get("visible_elements", []))),
+        ]
+    )
+    digest = hashlib.sha256(material.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16)
+
+
+def _scene_seed(job_seed: int, scene_idx: int, attempt: int = 0) -> int:
+    return (job_seed + scene_idx * 101 + attempt * 17) & 0x7FFFFFFF
+
+
+def _style_lock_id(job_seed: int, dna: dict) -> str:
+    raw = f"{job_seed}|{dna.get('product_type', '')}|{dna.get('color', '')}|{dna.get('shape', '')}"
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+
+
+def _prompt_model_type(generator_name: str) -> str:
+    n = generator_name.lower()
+    if "lora" in n:
+        return "lora"
+    if "flux" in n or "kontext" in n:
+        return "flux"
+    if "gpt" in n or "openai" in n:
+        return "gpt"
+    return "gemini"
+
+
+def _canonical_product_key(name: str) -> str:
+    s = name.lower()
+    if any(k in s for k in ("zlew", "sink")):
+        return "sink"
+    if any(k in s for k in ("bateria", "faucet", "tap")):
+        return "faucet"
+    if any(k in s for k in ("dozownik", "dispenser")):
+        return "dispenser"
+    if any(k in s for k in ("syfon", "siphon", "drain")):
+        return "siphon"
+    if any(k in s for k in ("deska", "cutting board")):
+        return "board"
+    if any(k in s for k in ("koszyk", "basket", "colander")):
+        return "basket"
+    if "ociekacz" in s:
+        return "drainboard"
+    return re.sub(r"\s+", "_", s.strip())[:48]
+
+
+def _build_composite_products(dna: dict, specyfikacja: str, extracted: dict | None = None) -> list[dict]:
+    """Buduje listę produktów do kompozytu z visible_elements i NOT_present."""
+    visible = [str(v).strip() for v in dna.get("visible_elements", []) if str(v).strip()]
+    not_present = {str(v).lower().strip() for v in dna.get("NOT_present", []) if str(v).strip()}
+    products: list[dict] = []
+    seen: set[str] = set()
+
+    def is_excluded(name: str) -> bool:
+        s = name.lower().strip()
+        return any(np in s or s in np for np in not_present)
+
+    for el in visible:
+        if is_excluded(el):
+            continue
+        key = _canonical_product_key(el)
+        if key in seen:
+            continue
+        seen.add(key)
+        products.append({"name": el, "description": ""})
+
+    if not any(_canonical_product_key(p["name"]) == "sink" for p in products):
+        sink_name = "zlew granitowy"
+        color = dna.get("color") or (extracted or {}).get("kolor_zlew") or ""
+        dims = dna.get("approximate_dimensions", "")
+        desc = ", ".join(x for x in [str(color).strip(), str(dims).strip()] if x)
+        products.insert(0, {"name": sink_name, "description": desc})
+
+    if not products:
+        products = [{"name": "zlew granitowy", "description": specyfikacja[:200]}]
+
+    return products
+
+
 async def _run_generation(
     session: SessionData,
     job_id: str,
@@ -1929,10 +2088,11 @@ async def _run_generation(
         await _send_event(queue, "progress", {"step": 2, "total": 12, "message": "Analiza produktu (Product DNA)..."})
         product_dna_json = "{}"
         try:
-            product_dna_json = await analyze_product_dna(client, pil_images[:2])
-            session.api_calls_count += 1
-            session.text_gen_count += 1
-            _track_cost(session, "gemini-text", COST_GEMINI_TEXT_USD)
+            product_dna_json = await analyze_product_dna_multi(client, pil_images)
+            batch_count = max(1, (len(pil_images) + 1) // 2)
+            session.api_calls_count += batch_count
+            session.text_gen_count += batch_count
+            _track_cost(session, "gemini-text", COST_GEMINI_TEXT_USD * batch_count)
         except Exception as e:
             logger.error("[%s] Product DNA failed: %.200s", session.job_id, e, exc_info=True)
             await _send_event(queue, "warning", {"message": f"Analiza produktu: {get_user_error(e)}"})
@@ -1943,7 +2103,20 @@ async def _run_generation(
         except json.JSONDecodeError:
             session.product_dna = {}
 
-        await _send_event(queue, "product_dna", {"dna": product_dna_json})
+        # Auto-suggested akcesoria (np. bateria w pasującym kolorze)
+        from prompts import resolve_scene_elements
+        _, _, auto_suggested = resolve_scene_elements(session.product_dna)
+        job_seed = _compute_job_seed(job_id, session.product_dna)
+        style_lock_id = _style_lock_id(job_seed, session.product_dna)
+        phase1_locked_model: str | None = None
+        phase2_locked_model: str | None = None
+
+        await _send_event(queue, "product_dna", {
+            "dna": product_dna_json,
+            "auto_suggested": auto_suggested,
+            "style_lock_id": style_lock_id,
+            "job_seed": job_seed,
+        })
         await _send_event(queue, "cost_update", {
             "total": round(session.total_cost_usd, 4),
             "per_model": session.model_costs,
@@ -1955,7 +2128,11 @@ async def _run_generation(
         # =====================================================================
         session.current_phase = "phase1"
         generated_images = {}
-        imgs_for_gen = transparent_images[:2] if transparent_images else [img.convert("RGBA") for img in pil_images[:2]]
+        imgs_for_gen = (
+            transparent_images[:3]
+            if transparent_images
+            else [img.convert("RGBA") for img in pil_images[:3]]
+        )
 
         # --- [2a] Packshoty indywidualne (Pillow, $0) ---
         await _send_event(queue, "progress", {"step": 3, "total": 12, "message": "Tworzenie packshotów (Pillow)..."})
@@ -1983,37 +2160,70 @@ async def _run_generation(
         # --- [2b] Kompozyty zestawu (Gemini Flash) ---
         await _send_event(queue, "progress", {"step": 4, "total": 12, "message": "Generowanie kompozytów zestawu..."})
 
-        # Buduj listę produktów z Product DNA
         dna_dict = session.product_dna or {}
-        composite_products = []
-        if dna_dict.get("nazwa"):
-            composite_products.append({
-                "name": dna_dict.get("nazwa", "zlew granitowy"),
-                "description": dna_dict.get("opis_krotki", ""),
-            })
-        if dna_dict.get("akcesoria"):
-            for acc in dna_dict["akcesoria"]:
-                if isinstance(acc, dict):
-                    composite_products.append({
-                        "name": acc.get("nazwa", "akcesorium"),
-                        "description": acc.get("opis", ""),
-                    })
-                elif isinstance(acc, str):
-                    composite_products.append({"name": acc, "description": ""})
-        if not composite_products:
-            composite_products = [{"name": "zlew granitowy z akcesoriami", "description": specyfikacja[:200]}]
-
-        composite_prompt = get_composite_packshot_prompt(composite_products)
+        composite_products = _build_composite_products(dna_dict, specyfikacja, extracted)
+        excluded_elements = list(dna_dict.get("NOT_present", []))
         composite_chain = get_composite_generators()
-        comp_img, comp_model, comp_cost = await generate_with_fallback(
-            composite_chain, composite_prompt, imgs_for_gen,
+        composite_seed = _scene_seed(job_seed, scene_idx=90, attempt=0)
+
+        composite_prompt = get_composite_packshot_prompt(
+            composite_products,
+            excluded_elements=excluded_elements,
+            style_lock_id=style_lock_id,
         )
+        active_composite_chain = (
+            [g for g in composite_chain if g.name() == phase1_locked_model]
+            if phase1_locked_model
+            else composite_chain
+        )
+        comp_img, comp_model, comp_cost = await generate_with_fallback(
+            active_composite_chain,
+            composite_prompt,
+            imgs_for_gen,
+            seed=composite_seed,
+        )
+        if comp_img is None and phase1_locked_model:
+            comp_img, comp_model, comp_cost = await generate_with_fallback(
+                composite_chain,
+                composite_prompt,
+                imgs_for_gen,
+                seed=composite_seed,
+            )
+        white_metrics = {}
+        if comp_img and WHITE_BG_GATE_ENABLED:
+            white_metrics = evaluate_white_background(comp_img)
+            if not white_metrics.get("pass", False) and WHITE_BG_AUTOFIX_ENABLED:
+                comp_img = enforce_pure_white_background(comp_img)
+                white_metrics = evaluate_white_background(comp_img)
+            retry_idx = 0
+            while (
+                comp_img
+                and not white_metrics.get("pass", False)
+                and retry_idx < WHITE_BG_MAX_RETRY
+            ):
+                retry_idx += 1
+                comp_img, comp_model, comp_cost = await generate_with_fallback(
+                    active_composite_chain,
+                    composite_prompt,
+                    imgs_for_gen,
+                    seed=composite_seed + retry_idx,
+                )
+                if not comp_img:
+                    break
+                white_metrics = evaluate_white_background(comp_img)
+                if not white_metrics.get("pass", False) and WHITE_BG_AUTOFIX_ENABLED:
+                    comp_img = enforce_pure_white_background(comp_img)
+                    white_metrics = evaluate_white_background(comp_img)
+            if comp_img and not white_metrics.get("pass", False):
+                logger.warning("Composite white gate failed after retries: %s", white_metrics)
         if comp_img:
             session.api_calls_count += 1
             session.image_gen_count += 1
             _track_cost(session, comp_model, comp_cost)
+            if (not WHITE_BG_GATE_ENABLED) or white_metrics.get("white_bg_score", 1.0) > MODEL_LOCK_MIN_QUALITY:
+                phase1_locked_model = comp_model
 
-            key = f"composite_{timestamp}"
+            key = f"composite_{timestamp}_r0"
             img_path = job_dir / f"{key}.png"
             comp_img.save(str(img_path))
             generated_images[key] = str(img_path)
@@ -2024,6 +2234,12 @@ async def _run_generation(
                 "label": f"Kompozyt zestawu ({comp_model})",
                 "type": "composite",
             })
+            if white_metrics:
+                await _send_event(queue, "quality", {
+                    "type": "composite_white_bg",
+                    "metrics": white_metrics,
+                    "model": comp_model,
+                })
             await _send_event(queue, "cost_update", {
                 "total": round(session.total_cost_usd, 4),
                 "per_model": session.model_costs,
@@ -2080,18 +2296,59 @@ async def _run_generation(
                 "message": f"Regeneracja kompozytu (runda {session.phase_round})...",
             })
 
-            regen_prompt = get_composite_packshot_prompt(composite_products)
+            regen_prompt = get_composite_packshot_prompt(
+                composite_products,
+                excluded_elements=excluded_elements,
+                style_lock_id=style_lock_id,
+            )
             if session.phase_feedback:
                 regen_prompt += f"\n\n=== USER FEEDBACK (apply these corrections) ===\n{session.phase_feedback}"
-            comp_img2, comp_model2, comp_cost2 = await generate_with_fallback(
-                composite_chain, regen_prompt, imgs_for_gen,
+            active_composite_chain = (
+                [g for g in composite_chain if g.name() == phase1_locked_model]
+                if phase1_locked_model
+                else composite_chain
             )
+            regen_seed = _scene_seed(job_seed, scene_idx=90, attempt=session.phase_round)
+            comp_img2, comp_model2, comp_cost2 = await generate_with_fallback(
+                active_composite_chain, regen_prompt, imgs_for_gen, seed=regen_seed,
+            )
+            if comp_img2 is None and phase1_locked_model:
+                comp_img2, comp_model2, comp_cost2 = await generate_with_fallback(
+                    composite_chain, regen_prompt, imgs_for_gen, seed=regen_seed,
+                )
+            white_metrics2 = {}
+            if comp_img2 and WHITE_BG_GATE_ENABLED:
+                white_metrics2 = evaluate_white_background(comp_img2)
+                if not white_metrics2.get("pass", False) and WHITE_BG_AUTOFIX_ENABLED:
+                    comp_img2 = enforce_pure_white_background(comp_img2)
+                    white_metrics2 = evaluate_white_background(comp_img2)
+                retry_idx2 = 0
+                while (
+                    comp_img2
+                    and not white_metrics2.get("pass", False)
+                    and retry_idx2 < WHITE_BG_MAX_RETRY
+                ):
+                    retry_idx2 += 1
+                    comp_img2, comp_model2, comp_cost2 = await generate_with_fallback(
+                        active_composite_chain,
+                        regen_prompt,
+                        imgs_for_gen,
+                        seed=regen_seed + retry_idx2,
+                    )
+                    if not comp_img2:
+                        break
+                    white_metrics2 = evaluate_white_background(comp_img2)
+                    if not white_metrics2.get("pass", False) and WHITE_BG_AUTOFIX_ENABLED:
+                        comp_img2 = enforce_pure_white_background(comp_img2)
+                        white_metrics2 = evaluate_white_background(comp_img2)
             if comp_img2:
                 session.api_calls_count += 1
                 session.image_gen_count += 1
                 _track_cost(session, comp_model2, comp_cost2)
+                if (not WHITE_BG_GATE_ENABLED) or white_metrics2.get("white_bg_score", 1.0) > MODEL_LOCK_MIN_QUALITY:
+                    phase1_locked_model = comp_model2
 
-                key = f"composite_{timestamp}"
+                key = f"composite_{timestamp}_r{session.phase_round}"
                 img_path = job_dir / f"{key}.png"
                 comp_img2.save(str(img_path))
                 generated_images[key] = str(img_path)
@@ -2102,6 +2359,12 @@ async def _run_generation(
                     "label": f"Kompozyt zestawu v{session.phase_round} ({comp_model2})",
                     "type": "composite",
                 })
+                if white_metrics2:
+                    await _send_event(queue, "quality", {
+                        "type": "composite_white_bg",
+                        "metrics": white_metrics2,
+                        "model": comp_model2,
+                    })
 
             phase1_regen_urls = {k: f"/api/images/{job_id}/{k}" for k in generated_images}
             await _send_event(queue, "phase1_complete", {
@@ -2148,16 +2411,41 @@ async def _run_generation(
                 "message": f"Generowanie: {scene_name}",
             })
 
-            prompt = get_lifestyle_prompt_v2(scene_config, product_dna_json)
             best_score = 0
             best_img = None
             best_model = "unknown"
+            latest_corrections = ""
 
             for attempt in range(3):  # 1 oryginalna proba + max 2 retry
                 try:
-                    gen_img, gen_model, gen_cost = await generate_with_fallback(
-                        lifestyle_generators, prompt, imgs_for_gen,
+                    attempt_seed = _scene_seed(job_seed, scene_idx=scene_idx, attempt=attempt)
+                    active_lifestyle_chain = (
+                        [g for g in lifestyle_generators if g.name() == phase2_locked_model]
+                        if phase2_locked_model
+                        else lifestyle_generators
                     )
+                    prompt_factory = lambda gen, corr=latest_corrections: get_lifestyle_prompt_v2(
+                        scene_config,
+                        product_dna_json,
+                        corrections=corr,
+                        model_type=_prompt_model_type(gen.name()),
+                        style_lock_id=style_lock_id,
+                    )
+                    gen_img, gen_model, gen_cost = await generate_with_fallback(
+                        active_lifestyle_chain,
+                        prompt="",
+                        reference_images=imgs_for_gen,
+                        seed=attempt_seed,
+                        prompt_factory=prompt_factory,
+                    )
+                    if gen_img is None and phase2_locked_model:
+                        gen_img, gen_model, gen_cost = await generate_with_fallback(
+                            lifestyle_generators,
+                            prompt="",
+                            reference_images=imgs_for_gen,
+                            seed=attempt_seed,
+                            prompt_factory=prompt_factory,
+                        )
                     session.api_calls_count += 1
 
                     if gen_img:
@@ -2186,6 +2474,8 @@ async def _run_generation(
                         best_score = score
                         best_img = gen_img
                         best_model = gen_model
+                    if phase2_locked_model is None and (score / 10.0) > MODEL_LOCK_MIN_QUALITY:
+                        phase2_locked_model = gen_model
 
                     if score >= 8:
                         break  # Jakosc OK (prog z RETRY_THRESHOLD w config)
@@ -2196,7 +2486,7 @@ async def _run_generation(
                             "attempt": attempt + 2,
                             "corrections": corrections,
                         })
-                        prompt = get_lifestyle_prompt_v2(scene_config, product_dna_json, corrections=corrections)
+                        latest_corrections = corrections
                         await asyncio.sleep(RATE_LIMIT_SEC)
 
                 except Exception as e:
@@ -2281,10 +2571,34 @@ async def _run_generation(
                     regen_scene_idx = si
                     break
             regen_scene = lifestyle_scenes[regen_scene_idx]
-            regen_prompt = get_lifestyle_prompt_v2(regen_scene, product_dna_json, corrections=session.phase_feedback)
-            regen_img, regen_model, regen_cost = await generate_with_fallback(
-                lifestyle_generators, regen_prompt, imgs_for_gen,
+            regen_seed = _scene_seed(job_seed, scene_idx=regen_scene_idx, attempt=session.phase_round)
+            active_lifestyle_chain = (
+                [g for g in lifestyle_generators if g.name() == phase2_locked_model]
+                if phase2_locked_model
+                else lifestyle_generators
             )
+            regen_prompt_factory = lambda gen: get_lifestyle_prompt_v2(
+                regen_scene,
+                product_dna_json,
+                corrections=session.phase_feedback,
+                model_type=_prompt_model_type(gen.name()),
+                style_lock_id=style_lock_id,
+            )
+            regen_img, regen_model, regen_cost = await generate_with_fallback(
+                active_lifestyle_chain,
+                prompt="",
+                reference_images=imgs_for_gen,
+                seed=regen_seed,
+                prompt_factory=regen_prompt_factory,
+            )
+            if regen_img is None and phase2_locked_model:
+                regen_img, regen_model, regen_cost = await generate_with_fallback(
+                    lifestyle_generators,
+                    prompt="",
+                    reference_images=imgs_for_gen,
+                    seed=regen_seed,
+                    prompt_factory=regen_prompt_factory,
+                )
             if regen_img:
                 session.api_calls_count += 1
                 session.image_gen_count += 1

@@ -192,7 +192,7 @@ export default function LoginPage() {
         </CardContent>
       </Card>
       <p className="mt-6 text-[11px] text-muted-foreground/50 select-none" aria-hidden="true">
-        Wewnętrzne narzędzie · v4.3 · Dostęp tylko dla uprawnionych
+        Wewnętrzne narzędzie · v4.3.3 · Dostęp tylko dla uprawnionych
       </p>
     </div>
   );

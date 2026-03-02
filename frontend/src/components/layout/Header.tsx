@@ -38,7 +38,7 @@ export default memo(function Header() {
           <div className="flex flex-col">
             <div className="flex items-center gap-1.5">
               <h1 className="text-sm font-semibold tracking-wide sm:text-base">Generator Aukcji</h1>
-              <span className="text-[9px] font-mono text-muted-foreground/40 bg-muted/30 px-1 py-0.5 rounded">v4.3</span>
+              <span className="text-[9px] font-mono text-muted-foreground/40 bg-muted/30 px-1 py-0.5 rounded">v4.3.3</span>
             </div>
             <span className="text-[10px] text-muted-foreground leading-none hidden sm:block">Granitowe Zlewy</span>
           </div>

@@ -10,7 +10,9 @@ import logging
 import os
 import random
 import time
+from collections import deque
 from abc import ABC, abstractmethod
+from typing import Callable
 
 import PIL.Image
 
@@ -18,13 +20,14 @@ from config import (
     GEMINI_API_KEY, GEMINI_FLASH_IMAGE_MODEL, GEMINI_PRO_IMAGE_MODEL,
     OPENAI_API_KEY, OPENAI_IMAGE_MODEL, FAL_AI_API_KEY,
     KONTEXT_MAX_MODEL, KONTEXT_PRO_MODEL,
-    FLUX_2_LORA_MODEL, FLUX_2_PRO_EDIT_MODEL, KLING_O3_MODEL,
+    FLUX_2_LORA_MODEL, FLUX_2_LORA_EDIT_MODEL, FLUX_2_PRO_EDIT_MODEL, KLING_O3_MODEL,
     LORA_MODEL_PATH, LORA_TRIGGER_WORD, LORA_WEIGHT,
     COST_KONTEXT_MAX_IMAGE_USD, COST_KONTEXT_PRO_IMAGE_USD,
     COST_FLUX_2_LORA_IMAGE_USD, COST_FLUX_2_PRO_EDIT_IMAGE_USD,
     COST_KLING_O3_IMAGE_USD, COST_GEMINI_FLASH_IMAGE_USD,
     COST_GEMINI_PRO_IMAGE_USD, COST_GPT_IMAGE_USD,
     COST_LORA_IMAGE_USD,
+    LORA_PRIMARY_ENABLED, LORA_EDIT_ENABLED,
     PACKSHOT_SIZE, LIFESTYLE_SIZE, COMPOSITE_SIZE,
 )
 
@@ -64,6 +67,118 @@ def normalize_output(img: PIL.Image.Image, target_size: tuple[int, int]) -> PIL.
     return img
 
 
+def evaluate_white_background(img: PIL.Image.Image) -> dict:
+    """Ocena bieli tła na obramowaniu obrazu (dla kompozytów)."""
+    rgb = img.convert("RGB")
+    w, h = rgb.size
+    if w < 10 or h < 10:
+        return {
+            "border_white_ratio": 0.0,
+            "border_mean_rgb": [0.0, 0.0, 0.0],
+            "color_cast_max": 255.0,
+            "white_bg_score": 0.0,
+            "pass": False,
+        }
+
+    bw = max(2, int(w * 0.06))
+    bh = max(2, int(h * 0.06))
+    strips = [
+        rgb.crop((0, 0, w, bh)),
+        rgb.crop((0, h - bh, w, h)),
+        rgb.crop((0, 0, bw, h)),
+        rgb.crop((w - bw, 0, w, h)),
+    ]
+
+    total = 0
+    white_count = 0
+    sum_r = 0.0
+    sum_g = 0.0
+    sum_b = 0.0
+    for strip in strips:
+        for r, g, b in strip.getdata():
+            total += 1
+            sum_r += r
+            sum_g += g
+            sum_b += b
+            if min(r, g, b) >= 249 and (max(r, g, b) - min(r, g, b)) <= 6:
+                white_count += 1
+
+    if total == 0:
+        return {
+            "border_white_ratio": 0.0,
+            "border_mean_rgb": [0.0, 0.0, 0.0],
+            "color_cast_max": 255.0,
+            "white_bg_score": 0.0,
+            "pass": False,
+        }
+
+    mean_r = sum_r / total
+    mean_g = sum_g / total
+    mean_b = sum_b / total
+    border_white_ratio = white_count / total
+    color_cast_max = max(abs(mean_r - mean_g), abs(mean_r - mean_b), abs(mean_g - mean_b))
+    white_bg_score = max(
+        0.0, min(1.0, 0.8 * border_white_ratio + 0.2 * (1.0 - color_cast_max / 10.0))
+    )
+    passed = (
+        border_white_ratio >= 0.985
+        and min(mean_r, mean_g, mean_b) >= 249
+        and color_cast_max <= 3
+    )
+    return {
+        "border_white_ratio": round(border_white_ratio, 4),
+        "border_mean_rgb": [round(mean_r, 2), round(mean_g, 2), round(mean_b, 2)],
+        "color_cast_max": round(color_cast_max, 2),
+        "white_bg_score": round(white_bg_score, 4),
+        "pass": passed,
+    }
+
+
+def enforce_pure_white_background(img: PIL.Image.Image) -> PIL.Image.Image:
+    """Whitening obszarów tła połączonych z krawędzią (bez ruszania środka produktu)."""
+    rgb = img.convert("RGB")
+    px = rgb.load()
+    w, h = rgb.size
+    visited = bytearray(w * h)
+    q: deque[tuple[int, int]] = deque()
+
+    def idx(x: int, y: int) -> int:
+        return y * w + x
+
+    def qualifies(x: int, y: int) -> bool:
+        r, g, b = px[x, y]
+        return min(r, g, b) >= 228 and (max(r, g, b) - min(r, g, b)) <= 26
+
+    def enqueue(x: int, y: int) -> None:
+        i = idx(x, y)
+        if visited[i]:
+            return
+        visited[i] = 1
+        if qualifies(x, y):
+            q.append((x, y))
+
+    for x in range(w):
+        enqueue(x, 0)
+        enqueue(x, h - 1)
+    for y in range(1, h - 1):
+        enqueue(0, y)
+        enqueue(w - 1, y)
+
+    while q:
+        x, y = q.popleft()
+        px[x, y] = (255, 255, 255)
+        if x > 0:
+            enqueue(x - 1, y)
+        if x < w - 1:
+            enqueue(x + 1, y)
+        if y > 0:
+            enqueue(x, y - 1)
+        if y < h - 1:
+            enqueue(x, y + 1)
+
+    return rgb
+
+
 def _extract_image_from_gemini_response(response) -> PIL.Image.Image | None:
     """Wyciąga PIL Image z odpowiedzi Gemini."""
     if not response or not response.parts:
@@ -92,6 +207,7 @@ class ImageGenerator(ABC):
         prompt: str,
         reference_images: list[PIL.Image.Image] | None = None,
         target_size: tuple[int, int] = LIFESTYLE_SIZE,
+        seed: int | None = None,
     ) -> PIL.Image.Image | None:
         ...
 
@@ -116,11 +232,12 @@ class ImageGenerator(ABC):
         reference_images: list[PIL.Image.Image] | None = None,
         target_size: tuple[int, int] = LIFESTYLE_SIZE,
         max_retries: int = 3,
+        seed: int | None = None,
     ) -> PIL.Image.Image | None:
         """Generate z exponential backoff. Retry WEWNĄTRZ generatora."""
         for attempt in range(1, max_retries + 1):
             try:
-                result = await self.generate(prompt, reference_images, target_size)
+                result = await self.generate(prompt, reference_images, target_size, seed=seed)
                 if result is not None:
                     return normalize_output(result, target_size)
                 if attempt < max_retries:
@@ -169,6 +286,7 @@ class GeminiFlashImageGenerator(ImageGenerator):
         prompt: str,
         reference_images: list[PIL.Image.Image] | None = None,
         target_size: tuple[int, int] = LIFESTYLE_SIZE,
+        seed: int | None = None,
     ) -> PIL.Image.Image | None:
         from google.genai import types
 
@@ -180,6 +298,8 @@ class GeminiFlashImageGenerator(ImageGenerator):
         config_kwargs = {
             "response_modalities": ["IMAGE", "TEXT"],
         }
+        if seed is not None:
+            config_kwargs["seed"] = int(seed)
         if self._thinking_level:
             config_kwargs["thinking_config"] = types.ThinkingConfig(
                 thinking_level=self._thinking_level
@@ -232,6 +352,7 @@ class GeminiProImageGenerator(ImageGenerator):
         prompt: str,
         reference_images: list[PIL.Image.Image] | None = None,
         target_size: tuple[int, int] = LIFESTYLE_SIZE,
+        seed: int | None = None,
     ) -> PIL.Image.Image | None:
         from google.genai import types
 
@@ -240,10 +361,13 @@ class GeminiProImageGenerator(ImageGenerator):
         if reference_images:
             contents.extend(reference_images[:6])
 
-        gen_config = types.GenerateContentConfig(
-            response_modalities=["IMAGE", "TEXT"],
-            image_config=types.ImageConfig(imageSize="2K"),
-        )
+        config_kwargs = {
+            "response_modalities": ["IMAGE", "TEXT"],
+            "image_config": types.ImageConfig(imageSize="2K"),
+        }
+        if seed is not None:
+            config_kwargs["seed"] = int(seed)
+        gen_config = types.GenerateContentConfig(**config_kwargs)
 
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
@@ -281,6 +405,7 @@ class PillowPackshotGenerator(ImageGenerator):
         prompt: str,
         reference_images: list[PIL.Image.Image] | None = None,
         target_size: tuple[int, int] = PACKSHOT_SIZE,
+        seed: int | None = None,
     ) -> PIL.Image.Image | None:
         if not reference_images:
             return None
@@ -394,7 +519,7 @@ class KontextMaxGenerator(ImageGenerator):
             self._client = fal_client
         return self._client
 
-    async def generate(self, prompt, reference_images=None, target_size=LIFESTYLE_SIZE):
+    async def generate(self, prompt, reference_images=None, target_size=LIFESTYLE_SIZE, seed: int | None = None):
         if not reference_images:
             logger.warning("KontextMax: brak reference image (produkt PNG)")
             return None
@@ -403,18 +528,22 @@ class KontextMaxGenerator(ImageGenerator):
         product_uri = _pil_to_base64_uri(reference_images[0])
 
         loop = asyncio.get_running_loop()
+        arguments = {
+            "prompt": prompt,
+            "image_url": product_uri,
+            "image_size": {"width": target_size[0], "height": target_size[1]},
+            "num_images": 1,
+            "output_format": "jpeg",
+        }
+        if seed is not None:
+            arguments["seed"] = int(seed)
+
         result = await asyncio.wait_for(
             loop.run_in_executor(
                 None,
                 lambda: client.subscribe(
                     KONTEXT_MAX_MODEL,
-                    arguments={
-                        "prompt": prompt,
-                        "image_url": product_uri,
-                        "image_size": {"width": target_size[0], "height": target_size[1]},
-                        "num_images": 1,
-                        "output_format": "jpeg",
-                    },
+                    arguments=arguments,
                 ),
             ),
             timeout=FAL_AI_CALL_TIMEOUT,
@@ -446,7 +575,7 @@ class Flux2ProEditGenerator(ImageGenerator):
             self._client = fal_client
         return self._client
 
-    async def generate(self, prompt, reference_images=None, target_size=COMPOSITE_SIZE):
+    async def generate(self, prompt, reference_images=None, target_size=COMPOSITE_SIZE, seed: int | None = None):
         client = self._get_client()
 
         arguments = {
@@ -455,6 +584,8 @@ class Flux2ProEditGenerator(ImageGenerator):
             "num_images": 1,
             "output_format": "jpeg",
         }
+        if seed is not None:
+            arguments["seed"] = int(seed)
 
         if reference_images:
             image_urls = [_pil_to_base64_uri(img) for img in reference_images[:9]]
@@ -498,7 +629,7 @@ class KlingO3Generator(ImageGenerator):
             self._client = fal_client
         return self._client
 
-    async def generate(self, prompt, reference_images=None, target_size=COMPOSITE_SIZE):
+    async def generate(self, prompt, reference_images=None, target_size=COMPOSITE_SIZE, seed: int | None = None):
         client = self._get_client()
         tw, th = target_size
 
@@ -519,6 +650,8 @@ class KlingO3Generator(ImageGenerator):
             "aspect_ratio": aspect,
             "num_images": 1,
         }
+        if seed is not None:
+            arguments["seed"] = int(seed)
 
         if reference_images:
             image_urls = [_pil_to_base64_uri(img) for img in reference_images[:10]]
@@ -561,7 +694,7 @@ class GPTImage15Generator(ImageGenerator):
             self._client = OpenAI(api_key=OPENAI_API_KEY)
         return self._client
 
-    async def generate(self, prompt, reference_images=None, target_size=LIFESTYLE_SIZE):
+    async def generate(self, prompt, reference_images=None, target_size=LIFESTYLE_SIZE, seed: int | None = None):
         client = self._get_client()
         tw, th = target_size
 
@@ -651,7 +784,7 @@ class Flux2LoRAGenerator(ImageGenerator):
         url = LoRATrainer().get_active_lora_url()
         return url or ""
 
-    async def generate(self, prompt, reference_images=None, target_size=LIFESTYLE_SIZE):
+    async def generate(self, prompt, reference_images=None, target_size=LIFESTYLE_SIZE, seed: int | None = None):
         lora_url = self._get_lora_url()
         if not lora_url:
             logger.warning("Flux2LoRA: brak LoRA URL (config + rejestr), LoRA nie wytrenowane")
@@ -668,6 +801,8 @@ class Flux2LoRAGenerator(ImageGenerator):
             "guidance_scale": 2.5,
             "loras": [{"path": lora_url, "scale": LORA_WEIGHT}],
         }
+        if seed is not None:
+            arguments["seed"] = int(seed)
 
         loop = asyncio.get_running_loop()
         result = await asyncio.wait_for(
@@ -690,6 +825,55 @@ class Flux2LoRAGenerator(ImageGenerator):
 
 
 # ---------------------------------------------------------------------------
+# Flux 2 LoRA Edit via FAL.AI (primary v5.1)
+# ---------------------------------------------------------------------------
+
+class Flux2LoRAEditGenerator(Flux2LoRAGenerator):
+    """Flux 2 LoRA Edit - LoRA + edycja obrazów referencyjnych (max 3 refs)."""
+
+    async def generate(self, prompt, reference_images=None, target_size=COMPOSITE_SIZE, seed: int | None = None):
+        lora_url = self._get_lora_url()
+        if not lora_url:
+            logger.warning("Flux2LoRAEdit: brak LoRA URL (config + rejestr)")
+            return None
+        if not reference_images:
+            logger.warning("Flux2LoRAEdit: brak reference images")
+            return None
+
+        client = self._get_client()
+        image_urls = [_pil_to_base64_uri(img) for img in reference_images[:3]]
+        arguments = {
+            "prompt": prompt,
+            "image_urls": image_urls,
+            "image_size": {"width": target_size[0], "height": target_size[1]},
+            "num_images": 1,
+            "output_format": "jpeg",
+            "num_inference_steps": 28,
+            "guidance_scale": 2.5,
+            "loras": [{"path": lora_url, "scale": LORA_WEIGHT}],
+        }
+        if seed is not None:
+            arguments["seed"] = int(seed)
+
+        loop = asyncio.get_running_loop()
+        result = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: client.subscribe(
+                    FLUX_2_LORA_EDIT_MODEL,
+                    arguments=arguments,
+                ),
+            ),
+            timeout=FAL_AI_CALL_TIMEOUT,
+        )
+        url = result["images"][0]["url"]
+        return await _download_image_from_url(url)
+
+    def name(self): return "Flux 2 LoRA Edit"
+    def max_reference_images(self): return 3
+
+
+# ---------------------------------------------------------------------------
 # Fallback chain
 # ---------------------------------------------------------------------------
 
@@ -698,6 +882,8 @@ async def generate_with_fallback(
     prompt: str,
     reference_images: list[PIL.Image.Image] | None = None,
     target_size: tuple[int, int] = LIFESTYLE_SIZE,
+    seed: int | None = None,
+    prompt_factory: Callable[[ImageGenerator], str] | None = None,
 ) -> tuple[PIL.Image.Image | None, str, float]:
     """Próbuje generatory z listy po kolei. Zwraca (image, model_name, cost)."""
     for gen in chain:
@@ -707,8 +893,16 @@ async def generate_with_fallback(
             continue
 
         logger.info(f"Trying generator: {gen.name()}")
+        current_prompt = prompt
+        if prompt_factory is not None:
+            try:
+                built = prompt_factory(gen)
+                if built:
+                    current_prompt = built
+            except Exception as e:
+                logger.warning(f"prompt_factory failed for {gen.name()}: {e}")
         result = await gen.generate_with_retry(
-            prompt, reference_images, target_size, max_retries=2
+            current_prompt, reference_images, target_size, max_retries=2, seed=seed
         )
         if result is not None:
             return result, gen.name(), gen.cost_per_image()
@@ -721,20 +915,32 @@ async def generate_with_fallback(
 
 def get_lifestyle_generators() -> list[ImageGenerator]:
     """Zwraca instancje generatorów lifestyle (aktualnie dostępnych)."""
-    gens = []
-    gens.append(KontextMaxGenerator())
-    gens.append(Flux2LoRAGenerator())
+    gens: list[ImageGenerator] = []
+    if LORA_PRIMARY_ENABLED:
+        if LORA_EDIT_ENABLED:
+            gens.append(Flux2LoRAEditGenerator())
+        else:
+            gens.append(Flux2LoRAGenerator())
+        gens.append(KontextMaxGenerator())
+    else:
+        gens.append(KontextMaxGenerator())
+        gens.append(Flux2LoRAGenerator())
     gens.append(GeminiFlashImageGenerator(thinking_level="HIGH"))
     gens.append(GeminiProImageGenerator())
     return gens
 
 
 def get_composite_generators() -> list[ImageGenerator]:
-    """Zwraca instancje generatorów kompozytów (aktualnie dostępnych)."""
-    gens = []
-    gens.append(GeminiFlashImageGenerator(thinking_level="HIGH"))
+    """Zwraca instancje generatorów kompozytów (v5.1 LoRA-first)."""
+    gens: list[ImageGenerator] = []
+    if LORA_PRIMARY_ENABLED:
+        if LORA_EDIT_ENABLED:
+            gens.append(Flux2LoRAEditGenerator())
+        else:
+            gens.append(Flux2LoRAGenerator())
     gens.append(Flux2ProEditGenerator())
-    gens.append(KlingO3Generator())
+    gens.append(GeminiFlashImageGenerator(thinking_level="HIGH"))
+    gens.append(GeminiProImageGenerator())
     gens.append(PillowPackshotGenerator())
     return gens
 
@@ -748,7 +954,7 @@ async def get_provider_status() -> dict:
         },
         "fal_ai": {
             "configured": bool(FAL_AI_API_KEY),
-            "models": [KONTEXT_MAX_MODEL, FLUX_2_PRO_EDIT_MODEL, FLUX_2_LORA_MODEL, KLING_O3_MODEL],
+            "models": [KONTEXT_MAX_MODEL, FLUX_2_PRO_EDIT_MODEL, FLUX_2_LORA_MODEL, FLUX_2_LORA_EDIT_MODEL, KLING_O3_MODEL],
         },
         "openai": {
             "configured": bool(OPENAI_API_KEY),

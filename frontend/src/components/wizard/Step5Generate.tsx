@@ -49,6 +49,9 @@ export default memo(function Step5Generate() {
 
       const res = await api.startGeneration({
         session_id: sessionId,
+        catalog_key: 'granitowe_zlewy',
+        kategoria: state.suggestedCategory || 'Zlewy granitowe',
+        specyfikacja: state.specText || '',
         colors: state.confirmedColors,
         features: featureMap,
       });

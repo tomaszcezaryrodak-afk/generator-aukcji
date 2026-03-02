@@ -8,6 +8,7 @@ const SESSION_KEY = 'gz_wizard_state';
 interface PersistedState {
   step: WizardStep;
   specText: string;
+  userNotes: string;
   sessionId: string | null;
   suggestedCategory: string;
   suggestedColors: Record<string, string>;
@@ -27,6 +28,7 @@ function saveToSession(state: WizardState) {
   const persisted: PersistedState = {
     step: state.step,
     specText: state.specText,
+    userNotes: state.userNotes,
     sessionId: state.sessionId,
     suggestedCategory: state.suggestedCategory,
     suggestedColors: state.suggestedColors,
@@ -56,6 +58,7 @@ function loadFromSession(): Partial<WizardState> | null {
     return {
       step: restoredStep,
       specText: data.specText,
+      userNotes: data.userNotes || '',
       sessionId: data.sessionId || null,
       suggestedCategory: data.suggestedCategory,
       suggestedColors: data.suggestedColors,
@@ -79,6 +82,7 @@ const initialState: WizardState = {
   images: [],
   mainImageIndex: 0,
   specText: '',
+  userNotes: '',
   sessionId: null,
   suggestedCategory: '',
   suggestedColors: {},
@@ -111,12 +115,20 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
   switch (action.type) {
     case 'SET_STEP':
       return { ...state, step: action.step };
-    case 'SET_IMAGES':
+    case 'SET_IMAGES': {
+      // Revoke blob URLs for images being removed (replaced set)
+      const newUrls = new Set(action.images.map((img) => img.preview));
+      state.images.forEach((img) => {
+        if (!newUrls.has(img.preview)) URL.revokeObjectURL(img.preview);
+      });
       return { ...state, images: action.images };
+    }
     case 'SET_MAIN_IMAGE':
       return { ...state, mainImageIndex: action.index };
     case 'SET_SPEC_TEXT':
       return { ...state, specText: action.text };
+    case 'SET_USER_NOTES':
+      return { ...state, userNotes: action.notes };
     case 'SET_SESSION_ID':
       return { ...state, sessionId: action.sessionId };
     case 'SET_ANALYZING':
@@ -198,8 +210,7 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
     case 'CLEAR_CHAT':
       return { ...state, chatMessages: [] };
     case 'RESET':
-      // NOTE: Caller is responsible for calling URL.revokeObjectURL on image previews
-      // before dispatching RESET (see NewAuctionButton in Step6Results).
+      state.images.forEach((img) => URL.revokeObjectURL(img.preview));
       clearSession();
       return initialState;
     default:
@@ -240,7 +251,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     saveToSession(state);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.step, state.specText, state.sessionId, state.suggestedCategory, state.confirmedColors, state.confirmedFeatures, state.productDNA]);
+  }, [state.step, state.specText, state.userNotes, state.sessionId, state.suggestedCategory, state.confirmedColors, state.confirmedFeatures, state.productDNA]);
 
   const canProceed = useCallback(() => {
     switch (state.step) {

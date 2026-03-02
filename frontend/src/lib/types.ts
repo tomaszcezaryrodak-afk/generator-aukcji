@@ -61,6 +61,7 @@ export interface WizardState {
   images: UploadedImage[];
   mainImageIndex: number;
   specText: string;
+  userNotes: string;
 
   // Step 2: Analysis
   sessionId: string | null;
@@ -106,6 +107,7 @@ export type WizardAction =
   | { type: 'SET_IMAGES'; images: UploadedImage[] }
   | { type: 'SET_MAIN_IMAGE'; index: number }
   | { type: 'SET_SPEC_TEXT'; text: string }
+  | { type: 'SET_USER_NOTES'; notes: string }
   | { type: 'SET_SESSION_ID'; sessionId: string }
   | { type: 'SET_ANALYZING'; isAnalyzing: boolean }
   | { type: 'SET_ANALYSIS'; data: { category: string; colors: Record<string, string>; features: Feature[] } }

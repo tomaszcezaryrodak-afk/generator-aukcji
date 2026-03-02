@@ -19,12 +19,11 @@ import { CheckCircle, Loader2, RotateCcw, Copy, AlertCircle, Check, SlidersHoriz
 import type { GeneratedImage, ResultSections } from '@/lib/types';
 
 function NewAuctionButton() {
-  const { state, dispatch } = useWizard();
+  const { dispatch } = useWizard();
 
   const doReset = useCallback(() => {
-    state.images.forEach((img) => URL.revokeObjectURL(img.preview));
     dispatch({ type: 'RESET' });
-  }, [state.images, dispatch]);
+  }, [dispatch]);
 
   const { isConfirming, handleClick, handleBlur } = useConfirm(doReset);
 

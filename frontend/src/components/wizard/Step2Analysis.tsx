@@ -74,6 +74,7 @@ export default memo(function Step2Analysis() {
       formData.append('files', img.file);
     });
     if (state.specText) formData.append('specyfikacja', state.specText);
+    if (state.userNotes.trim()) formData.append('notatki', state.userNotes.trim());
     if (sessionId) formData.append('session_id', sessionId);
 
     api

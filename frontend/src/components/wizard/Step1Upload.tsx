@@ -9,25 +9,13 @@ import { Badge } from '@/components/ui/badge';
 import DropZone from '@/components/shared/DropZone';
 import ImageGrid from '@/components/shared/ImageGrid';
 import type { UploadedImage } from '@/lib/types';
-import { ImagePlus, FileText, Info, X } from 'lucide-react';
+import { ImagePlus, FileText, MessageSquare, Info, X } from 'lucide-react';
 
 export default memo(function Step1Upload() {
   const { state, dispatch } = useWizard();
 
   const specRef = useRef<HTMLTextAreaElement>(null);
-
-  // Track latest images for cleanup on unmount
-  const imagesRef = useRef(state.images);
-
-  useEffect(() => {
-    imagesRef.current = state.images;
-  });
-
-  useEffect(() => {
-    return () => {
-      imagesRef.current.forEach((img) => URL.revokeObjectURL(img.preview));
-    };
-  }, []);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
 
   const handleFiles = useCallback(
     (files: File[]) => {
@@ -63,7 +51,6 @@ export default memo(function Step1Upload() {
   const handleRemove = useCallback(
     (index: number) => {
       const updated = state.images.filter((_, i) => i !== index);
-      URL.revokeObjectURL(state.images[index].preview);
       dispatch({ type: 'SET_IMAGES', images: updated });
       if (state.mainImageIndex >= updated.length) {
         dispatch({ type: 'SET_MAIN_IMAGE', index: Math.max(0, updated.length - 1) });
@@ -72,17 +59,20 @@ export default memo(function Step1Upload() {
     [state.images, state.mainImageIndex, dispatch],
   );
 
-  // Auto-resize textarea
-  const autoResize = useCallback(() => {
-    const el = specRef.current;
+  // Auto-resize textareas
+  const autoResize = useCallback((el: HTMLTextAreaElement | null, maxH = 320) => {
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, maxH)}px`;
   }, []);
 
   useEffect(() => {
-    autoResize();
+    autoResize(specRef.current);
   }, [state.specText, autoResize]);
+
+  useEffect(() => {
+    autoResize(notesRef.current, 200);
+  }, [state.userNotes, autoResize]);
 
   const hasRestoredAnalysis = state.suggestedCategory && state.images.length === 0;
   const [showRestored, setShowRestored] = useState(true);
@@ -177,6 +167,44 @@ export default memo(function Step1Upload() {
                 aria-live="polite"
               >
                 {state.specText.split(/\s+/).filter(Boolean).length} słów · {state.specText.length}/5000
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+      <Card className="animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-primary" />
+            <CardTitle>Twoje notatki</CardTitle>
+            <Badge variant="outline" className="text-[10px] font-normal">opcjonalne</Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Opisz prostym językiem co wgrywasz i czego oczekujesz
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Label htmlFor="user-notes" className="sr-only">
+            Notatki
+          </Label>
+          <div className="relative">
+            <Textarea
+              ref={notesRef}
+              id="user-notes"
+              value={state.userNotes}
+              onChange={(e) => dispatch({ type: 'SET_USER_NOTES', notes: e.target.value.slice(0, 2000) })}
+              placeholder="np. Zlew czarny nakrapiany z baterią, chcę premium zdjęcia na Allegro. Ważne: bateria jest w kolorze złotym."
+              rows={2}
+              maxLength={2000}
+              className="resize-none pr-16 overflow-hidden transition-[height] duration-200"
+              autoComplete="off"
+            />
+            {state.userNotes.length > 0 && (
+              <span
+                className={`absolute bottom-2 right-3 text-[10px] tabular-nums ${state.userNotes.length > 1800 ? 'text-destructive' : 'text-muted-foreground/60'}`}
+                aria-live="polite"
+              >
+                {state.userNotes.length}/2000
               </span>
             )}
           </div>

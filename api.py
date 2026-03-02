@@ -756,6 +756,7 @@ async def analyze_product(request: Request, session: SessionData = Depends(requi
 
     catalog_key = form.get("catalog_key", "")
     specyfikacja = form.get("specyfikacja", "")
+    notatki = (form.get("notatki") or "").strip()[:2000] if form.get("notatki") else ""
 
     if not catalog_key:
         raise HTTPException(400, "Brak catalog_key.")
@@ -829,6 +830,7 @@ async def analyze_product(request: Request, session: SessionData = Depends(requi
         available_categories=categories,
         available_colors=kolory_pe,
         required_features=features_info["required"],
+        user_notes=notatki,
     )
 
     # Wywołaj Gemini
@@ -1173,20 +1175,22 @@ async def generate_stream(job_id: str, request: Request, ticket: str = Query("")
 
 
 @app.get("/api/images/{job_id}/{key}")
-async def get_image(job_id: str, key: str, session: SessionData = Depends(require_auth)):
-    """Serwuje wygenerowany obraz."""
+async def get_image(job_id: str, key: str):
+    """Serwuje wygenerowany obraz. Auth przez UUID job_id (128-bit, niezgadywalny)."""
     _validate_path_segment(job_id, "job_id")
     _validate_path_segment(key, "key")
 
     _cache_headers = {"Cache-Control": "private, max-age=3600, immutable"}
 
-    # Szukaj w results_images
-    file_path = session.results_images.get(key)
-    if file_path and Path(file_path).exists():
-        resolved = Path(file_path).resolve()
-        if not str(resolved).startswith(str(BASE_DIR.resolve())):
-            raise HTTPException(403, "Niedozwolona ścieżka")
-        return FileResponse(resolved, media_type="image/png", headers=_cache_headers)
+    # Szukaj sesji po job_id (max 5 sesji w pamięci)
+    session = next((s for s in sessions.values() if s.job_id == job_id), None)
+    if session:
+        file_path = session.results_images.get(key)
+        if file_path and Path(file_path).exists():
+            resolved = Path(file_path).resolve()
+            if not str(resolved).startswith(str(BASE_DIR.resolve())):
+                raise HTTPException(403, "Niedozwolona ścieżka")
+            return FileResponse(resolved, media_type="image/png", headers=_cache_headers)
 
     # Fallback: uploads/{job_id}/{key}.png
     fallback = (UPLOADS_DIR / job_id / f"{key}.png").resolve()

@@ -675,6 +675,7 @@ def get_analysis_prompt(
     available_categories: list[str],
     available_colors: dict,
     required_features: list[str],
+    user_notes: str = "",
 ) -> str:
     """Prompt do analizy produktu (nowy flow: analyze -> confirm -> generate).
 
@@ -690,12 +691,17 @@ def get_analysis_prompt(
 
     features_str = ", ".join(required_features)
 
+    notes_section = f"""
+NOTATKI UŻYTKOWNIKA (kontekst, intencje, dodatkowe informacje):
+{user_notes}
+""" if user_notes else ""
+
     return f"""Analizujesz produkt z katalogu "{catalog_name}".
 Na podstawie zdjęć i opisu produktu, zasugeruj parametry aukcji Allegro.
 
 SPECYFIKACJA PRODUKTU:
 {spec_text}
-
+{notes_section}
 DOSTĘPNE KATEGORIE (wybierz JEDNĄ najbardziej pasującą + max 2 alternatywy):
 {categories_str}
 

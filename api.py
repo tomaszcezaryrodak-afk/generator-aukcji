@@ -1,8 +1,7 @@
 """
-FastAPI backend: Generator Aukcji Produktowych v4.0
-Klient: Granitowe Zlewy (Marcin Mysliwiec)
-Stack: FastAPI + Gemini API + BaseLinker API
-Migracja z dashboard.py (Streamlit) na REST API + SSE.
+FastAPI backend: Generator Aukcji Produktowych v4.3
+Klient: Granitowe Zlewy (Marcin Myśliwiec)
+Stack: FastAPI + Gemini API + FAL.AI + SSE.
 """
 
 import asyncio
@@ -66,7 +65,7 @@ try:
 except ImportError:
     REMBG_AVAILABLE = False
 
-# Module-level rembg session (model ladowany raz)
+# Module-level rembg session (model ładowany raz)
 _rembg_session = None
 
 def get_rembg_session():
@@ -88,6 +87,16 @@ def get_openai_client():
     if _openai_client is None and OPENAI_AVAILABLE and OPENAI_API_KEY:
         _openai_client = openai_lib.OpenAI(api_key=OPENAI_API_KEY)
     return _openai_client
+
+# Module-level Gemini client (lazy singleton)
+_genai_client = None
+
+def get_genai_client():
+    """Zwraca reużywalną instancję Gemini API client."""
+    global _genai_client
+    if _genai_client is None and GENAI_AVAILABLE and GEMINI_API_KEY:
+        _genai_client = genai.Client(api_key=GEMINI_API_KEY)
+    return _genai_client
 
 from catalogs import get_catalog_display_names, get_categories, get_kolor_map, get_kolory_per_element, get_features_for_type
 from prompts import (
@@ -116,7 +125,7 @@ except ImportError:
     REGEN_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
-# Stale
+# Stałe
 # ---------------------------------------------------------------------------
 
 BASE_DIR = Path(__file__).parent
@@ -127,21 +136,21 @@ COST_PER_IMAGE_USD = COST_GEMINI_PRO_IMAGE_USD  # 0.134 z config.py
 COST_PER_TEXT_CALL_EST = COST_GEMINI_TEXT_USD     # 0.02 z config.py
 
 RATE_LIMIT_SEC = float(os.getenv("RATE_LIMIT_SEC", "2"))
-MAX_API_CALLS_PER_SESSION = 30
+MAX_API_CALLS_PER_SESSION = CONFIG_MAX_API_CALLS
 MAX_REGEN_PER_SESSION = 10
-MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 MAX_FILES = 10
 
 ALLOWED_HTML_TAGS = {'h2', 'h3', 'p', 'ul', 'ol', 'li', 'b', 'strong', 'br', 'em', 'small'}
 
 ERROR_MESSAGES_PL = {
-    "429": "Zbyt wiele zapytan do API. Odczekaj minute i sprobuj ponownie.",
-    "500": "Blad serwera Gemini. Sprobuj ponownie za chwile.",
-    "503": "Serwer Gemini tymczasowo niedostepny. Sprobuj za minute.",
+    "429": "Zbyt wiele zapytań do API. Odczekaj minutę i spróbuj ponownie.",
+    "500": "Błąd serwera Gemini. Spróbuj ponownie za chwilę.",
+    "503": "Serwer Gemini tymczasowo niedostępny. Spróbuj za minutę.",
     "RESOURCE_EXHAUSTED": "Wyczerpano limit API. Odczekaj kilka minut.",
-    "SAFETY": "Gemini zablokowal tresc (filtr bezpieczenstwa). Zmien specyfikacje i sprobuj ponownie.",
-    "RECITATION": "Gemini wykryl potencjalna duplikacje tresci. Zmien opis i sprobuj ponownie.",
-    "DEADLINE_EXCEEDED": "Przekroczono czas oczekiwania (120s). Sprobuj z mniejsza liczba zdjec.",
+    "SAFETY": "Gemini zablokował treść (filtr bezpieczeństwa). Zmień specyfikację i spróbuj ponownie.",
+    "RECITATION": "Gemini wykrył potencjalną duplikację treści. Zmień opis i spróbuj ponownie.",
+    "DEADLINE_EXCEEDED": "Przekroczono czas oczekiwania (120s). Spróbuj z mniejszą liczbą zdjęć.",
 }
 
 # ---------------------------------------------------------------------------
@@ -152,7 +161,14 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 _log_handler = RotatingFileHandler(
     OUTPUT_DIR / "app.log", maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
 )
-_log_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+_log_fmt = os.getenv("LOG_FORMAT", "text")
+if _log_fmt == "json":
+    _log_handler.setFormatter(logging.Formatter(
+        '{"ts":"%(asctime)s","level":"%(levelname)s","msg":"%(message)s"}',
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    ))
+else:
+    _log_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
 logging.basicConfig(level=logging.INFO, handlers=[_log_handler])
 logger = logging.getLogger("generator_aukcji")
 
@@ -162,16 +178,16 @@ logger = logging.getLogger("generator_aukcji")
 
 
 def get_user_error(e):
-    """Mapuje wyjatek API na komunikat PL."""
+    """Mapuje wyjątek API na komunikat PL."""
     error_str = str(e)
     for code, msg in ERROR_MESSAGES_PL.items():
         if code in error_str:
             return msg
-    return f"Blad API: {error_str[:150]}"
+    return f"Błąd API: {error_str[:150]}"
 
 
 def _validate_image_magic(content: bytes) -> bool:
-    """Sprawdza magic bytes pliku. Zwraca True jesli to dozwolony format obrazu."""
+    """Sprawdza magic bytes pliku. Zwraca True jeśli to dozwolony format obrazu."""
     for magic in ALLOWED_IMAGE_MAGIC:
         if content[:len(magic)] == magic:
             return True
@@ -182,13 +198,13 @@ _SAFE_PATH_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
 
 
 def _validate_path_segment(segment: str, label: str = "parametr") -> None:
-    """Waliduje segment sciezki (job_id, key, auction_id). Rzuca 400 przy path traversal."""
+    """Waliduje segment ścieżki (job_id, key, auction_id). Rzuca 400 przy path traversal."""
     if not segment or not _SAFE_PATH_RE.match(segment):
-        raise HTTPException(400, f"Nieprawidlowy {label}")
+        raise HTTPException(400, f"Nieprawidłowy {label}")
 
 
 def _sanitize_feedback(text: str) -> str:
-    """Usuwa tagi HTML/JS, prompt injection patterns i ogranicza dlugosc."""
+    """Usuwa tagi HTML/JS, prompt injection patterns i ogranicza długość."""
     text = re.sub(r'[<>{}\[\]]', '', text)
     text = re.sub(r'(?i)(ignore|forget|disregard|override)\s+(all|previous|above|instructions)', '', text)
     text = re.sub(r'(?i)(system|assistant|user)\s*:', '', text)
@@ -204,7 +220,7 @@ async def _api_call_with_timeout(coro, timeout: float = API_CALL_TIMEOUT_SEC):
 
 
 def _track_cost(session: SessionData, model_name: str, cost: float):
-    """Tracking kosztow per model."""
+    """Tracking kosztów per model."""
     session.model_costs[model_name] = session.model_costs.get(model_name, 0.0) + cost
     session.total_cost_usd += cost
 
@@ -214,6 +230,7 @@ def sanitize_html(html_text):
     html_text = html_lib.unescape(html_text)
     html_text = re.sub(r'\s+on\w+\s*=\s*["\'][^"\']*["\']', '', html_text, flags=re.IGNORECASE)
     html_text = re.sub(r'\s+on\w+\s*=\s*\S+', '', html_text, flags=re.IGNORECASE)
+    html_text = re.sub(r'javascript\s*:', '', html_text, flags=re.IGNORECASE)
 
     def replace_tag(match):
         full_tag = match.group(1)
@@ -235,9 +252,9 @@ def _pil_to_png_bytes(pil_img):
 
 
 def generate_image(client, prompt_text, images, task_name):
-    """Generuje obraz przez Gemini (domyslnie) lub OpenAI.
+    """Generuje obraz przez Gemini (domyślnie) lub OpenAI.
 
-    OpenAI wylaczone - problemy z MIME type i wiernością produktu.
+    OpenAI wyłączone - problemy z MIME type i wiernością produktu.
     Zwraca PIL Image lub None.
     """
     return _generate_image_gemini(client, prompt_text, images, task_name)
@@ -318,7 +335,7 @@ def _generate_image_gemini(client, prompt_text, images, task_name):
 
 
 def remove_background(pil_image):
-    """Usuwa tlo ze zdjecia produktu. Zwraca PIL Image RGBA."""
+    """Usuwa tło ze zdjęcia produktu. Zwraca PIL Image RGBA."""
     if not REMBG_AVAILABLE:
         return pil_image.convert("RGBA")
     session = get_rembg_session()
@@ -326,14 +343,14 @@ def remove_background(pil_image):
 
 
 def create_studio_packshots(transparent_img, original_img=None):
-    """Tworzy packshoty: oryginal na czystym bialym tle z miekkim cieniem. Zwraca liste PIL Images."""
+    """Tworzy packshoty: oryginał na czystym białym tle z miękkim cieniem. Zwraca listę PIL Images."""
     from PIL import ImageFilter
 
     results = []
 
-    # Packshot 1: oryginalny widok na bialym tle
+    # Packshot 1: oryginalny widok na białym tle
     canvas = PIL.Image.new("RGBA", (1200, 900), (255, 255, 255, 255))
-    # Skaluj produkt zeby zmiescil sie w 80% canvas
+    # Skaluj produkt żeby zmieścił się w 80% canvas
     product = transparent_img.copy()
     max_w, max_h = int(1200 * 0.8), int(900 * 0.8)
     ratio = min(max_w / product.width, max_h / product.height)
@@ -342,7 +359,7 @@ def create_studio_packshots(transparent_img, original_img=None):
     # Centruj
     x = (1200 - product.width) // 2
     y = (900 - product.height) // 2
-    # Dodaj miekki cien
+    # Dodaj miękki cień
     shadow = PIL.Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     shadow.paste(PIL.Image.new("RGBA", product.size, (0, 0, 0, 40)), (x + 8, y + 8), mask=product.split()[3])
     shadow = shadow.filter(ImageFilter.GaussianBlur(12))
@@ -350,7 +367,7 @@ def create_studio_packshots(transparent_img, original_img=None):
     canvas.paste(product, (x, y), mask=product)
     results.append(canvas.convert("RGB"))
 
-    # Packshot 2: jesli mamy oryginal, uzyj go (lepsze swiatlo)
+    # Packshot 2: jeśli mamy oryginał, użyj go (lepsze światło)
     if original_img:
         canvas2 = PIL.Image.new("RGB", (1200, 900), (255, 255, 255))
         orig = original_img.copy()
@@ -366,7 +383,7 @@ def create_studio_packshots(transparent_img, original_img=None):
 
 
 async def analyze_product_dna(client, pil_images):
-    """Analizuje produkt ze zdjec i zwraca Product DNA jako JSON string."""
+    """Analizuje produkt ze zdjęć i zwraca Product DNA jako JSON string."""
     prompt = get_product_dna_prompt()
     response = await _api_call_with_timeout(asyncio.to_thread(
         lambda: client.models.generate_content(
@@ -379,7 +396,7 @@ async def analyze_product_dna(client, pil_images):
         for part in response.parts:
             if part.text:
                 text = part.text.strip()
-                # Wyczysc JSON z ewentualnych blokow ```json
+                # Wyczyść JSON z ewentualnych bloków ```json
                 if text.startswith("```"):
                     lines = text.split("\n")
                     text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
@@ -388,7 +405,7 @@ async def analyze_product_dna(client, pil_images):
 
 
 async def run_selfcheck(client, original_img, generated_img, product_dna_json):
-    """Porownuje wygenerowane zdjecie z oryginalem. Zwraca (score, differences, corrections)."""
+    """Porównuje wygenerowane zdjęcie z oryginałem. Zwraca (score, differences, corrections)."""
     prompt = get_selfcheck_prompt(product_dna_json)
     response = await _api_call_with_timeout(asyncio.to_thread(
         lambda: client.models.generate_content(
@@ -416,10 +433,11 @@ async def run_selfcheck(client, original_img, generated_img, product_dna_json):
     return (5, [], "")
 
 
-def create_zip(image_paths: dict, description_text: str, output_path: Path):
-    """Tworzy ZIP z grafik (plikow z dysku) i opisu produktu.
+def create_zip(image_paths: dict, description_text: str, output_path: Path, features: dict | None = None):
+    """Tworzy ZIP z grafik (plików z dysku), opisu produktu i cech CSV.
 
-    image_paths: dict {name: file_path} - sciezki do plikow PNG na dysku.
+    image_paths: dict {name: file_path} - ścieżki do plików PNG na dysku.
+    features: dict {key: value} - cechy produktu do CSV.
     """
     with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zf:
         for name, file_path in image_paths.items():
@@ -432,26 +450,36 @@ def create_zip(image_paths: dict, description_text: str, output_path: Path):
                 zf.write(fp, f"grafiki/wygenerowane/{name}.png")
         if description_text:
             zf.writestr("opis-produktu.html", description_text)
-            zf.writestr("opis-produktu.txt", description_text)
+            # Strip HTML tags for plain text version
+            plain_text = re.sub(r'<[^>]+>', '', description_text)
+            plain_text = html_lib.unescape(plain_text).strip()
+            zf.writestr("opis-produktu.txt", plain_text)
+        if features:
+            csv_lines = ["Cecha;Wartosc"]
+            for k, v in features.items():
+                safe_k = str(k).replace('"', '""')
+                safe_v = str(v).replace('"', '""')
+                csv_lines.append(f'"{safe_k}";"{safe_v}"')
+            zf.writestr("cechy-produktu.csv", "\n".join(csv_lines))
 
 
 def validate_allegro_title(title):
-    """Waliduje tytul Allegro. Zwraca liste {status, text}."""
+    """Waliduje tytuł Allegro. Zwraca listę {status, text}."""
     checks = []
     length = len(title)
     if 60 <= length <= 75:
         checks.append({"status": "ok", "text": f"{length}/75 zn."})
     elif length < 60:
-        checks.append({"status": "warn", "text": f"{length}/75 zn. (za krotki)"})
+        checks.append({"status": "warn", "text": f"{length}/75 zn. (za krótki)"})
     else:
-        checks.append({"status": "error", "text": f"{length}/75 zn. (za dlugi)"})
+        checks.append({"status": "error", "text": f"{length}/75 zn. (za długi)"})
 
     words = title.split()
     caps_words = [w for w in words if len(w) > 3 and w.isupper()]
     if caps_words:
         checks.append({"status": "error", "text": f"CAPS: {', '.join(caps_words)}"})
 
-    banned = ["tanio", "okazja", "nowość", "promocja", "hit"]
+    banned = ["tanio", "okazja", "nowość", "promocja", "hit", "gratis", "super", "mega", "za darmo", "najlepszy", "najlepsza", "najtaniej"]
     found = [b for b in banned if b.lower() in title.lower()]
     if found:
         checks.append({"status": "error", "text": f"Zakazane: {', '.join(found)}"})
@@ -462,10 +490,10 @@ def validate_allegro_title(title):
 
 
 def _session_cost_pln(session: SessionData) -> float:
-    """Oblicza koszt sesji w PLN. Uzywa per-model trackingu jesli dostepny."""
+    """Oblicza koszt sesji w PLN. Używa per-model trackingu jeśli dostępny."""
     if session.total_cost_usd > 0:
         return session.total_cost_usd * USD_TO_PLN
-    # Fallback na estymacje (stare sesje bez _track_cost)
+    # Fallback na estymację (stare sesje bez _track_cost)
     image_cost = session.image_gen_count * COST_PER_IMAGE_USD
     text_cost = session.text_gen_count * COST_PER_TEXT_CALL_EST
     return (image_cost + text_cost) * USD_TO_PLN
@@ -484,14 +512,14 @@ def get_client_ip(request: Request) -> str:
 
 
 async def require_auth(request: Request) -> SessionData:
-    """Wyciaga token z Bearer header. SSE uzywa jednorazowych ticketow."""
+    """Wyciąga token z Bearer header. SSE używa jednorazowych ticketów."""
     auth = request.headers.get("authorization", "")
     token = auth[7:] if auth.startswith("Bearer ") else ""
     if not token:
         raise HTTPException(401, "Brak tokenu autoryzacji")
     session = get_session(token)
     if not session:
-        raise HTTPException(401, "Sesja wygasla lub nieprawidlowy token")
+        raise HTTPException(401, "Sesja wygasła lub nieprawidłowy token")
     return session
 
 
@@ -501,11 +529,11 @@ async def require_auth(request: Request) -> SessionData:
 
 
 async def _cleanup_loop():
-    """Periodyczny cleanup sesji i uploads."""
+    """Periodyczny cleanup sesji i uploadów."""
     while True:
         await asyncio.sleep(CLEANUP_INTERVAL)
         cleanup_expired()
-        # Cleanup uploads nie powiazanych z aktywna sesja
+        # Cleanup uploadów nie powiązanych z aktywną sesją
         if UPLOADS_DIR.exists():
             active_job_ids = {s.job_id for s in sessions.values() if s.job_id}
             for d in UPLOADS_DIR.iterdir():
@@ -518,22 +546,43 @@ async def _cleanup_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Startup validation
+    logger.info("=== Startup v4.3 ===")
+    logger.info(f"GEMINI_API_KEY: {'configured' if GEMINI_API_KEY else 'MISSING'}")
+    logger.info(f"FAL_AI_API_KEY: {'configured' if FAL_AI_API_KEY else 'MISSING'}")
+    logger.info(f"OPENAI_API_KEY: {'configured' if OPENAI_API_KEY else 'MISSING'}")
+    logger.info(f"REMBG_MODEL: {REMBG_MODEL}")
+    logger.info(f"CORS_ORIGINS: {CORS_ORIGINS}")
+    if not APP_PASSWORD:
+        logger.critical("APP_PASSWORD not set! Auth will be required.")
+
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     task = asyncio.create_task(_cleanup_loop())
     yield
+    # Graceful shutdown
+    logger.info("=== Shutdown ===")
     task.cancel()
     try:
         await task
     except asyncio.CancelledError:
         pass
+    # Anuluj aktywne generowania
+    active = [s for s in sessions.values() if s.job_status == "running"]
+    for s in active:
+        s.cancel_requested = True
+        if s.sse_queue:
+            await s.sse_queue.put(None)
+    if active:
+        logger.info("Anulowano %d aktywnych generowań", len(active))
+    logger.info("Shutdown zakończony. Sesji: %d", len(sessions))
 
 
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="Generator Aukcji API", version="4.0", lifespan=lifespan)
+app = FastAPI(title="Generator Aukcji API", version="4.3", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -541,6 +590,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
+    max_age=3600,
 )
 
 
@@ -549,18 +599,38 @@ from starlette.responses import Response as StarletteResponse
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Dodaje naglowki bezpieczenstwa do kazdej odpowiedzi."""
+    """Dodaje nagłówki bezpieczeństwa i request ID do każdej odpowiedzi."""
 
     async def dispatch(self, request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+        start = time.monotonic()
         response: StarletteResponse = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Response-Time"] = f"{(time.monotonic() - start) * 1000:.0f}ms"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["X-DNS-Prefetch-Control"] = "off"
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        # CSP definiowany w index.html <meta> (zawiera domeny fal.ai, googleapis etc.)
+        # Nie duplikujemy tutaj - dwa CSP = przeglądarka bierze restrykcyjniejszy z obu
+        # Zapobiegaj cachowaniu wrażliwych danych API (obrazy mają własny Cache-Control)
+        path = request.url.path
+        if path.startswith("/api/") and "/api/images/" not in path:
+            response.headers["Cache-Control"] = "no-store"
         return response
 
 
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Łapie nieobsłużone wyjątki i zwraca czyste JSON zamiast stacktrace."""
+    logger.error("Nieobsłużony wyjątek: %s %s - %s", request.method, request.url.path, exc, exc_info=True)
+    return JSONResponse(status_code=500, content={"detail": "Wewnętrzny błąd serwera"})
 
 
 # ---------------------------------------------------------------------------
@@ -569,7 +639,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 
 def _verify_password(plain: str, stored: str) -> bool:
-    """Weryfikuje haslo. Obsluguje bcrypt hash ($2b$) i plain text (legacy)."""
+    """Weryfikuje hasło. Obsługuje bcrypt hash ($2b$) i plain text (legacy)."""
     if stored.startswith("$2b$") or stored.startswith("$2a$"):
         return bcrypt.checkpw(plain.encode("utf-8"), stored.encode("utf-8"))
     return hmac.compare_digest(plain, stored)
@@ -577,7 +647,7 @@ def _verify_password(plain: str, stored: str) -> bool:
 
 @app.post("/api/auth")
 async def auth(request: Request):
-    """Logowanie: sprawdza haslo, tworzy sesje, zwraca token."""
+    """Logowanie: sprawdza hasło, tworzy sesję, zwraca token."""
     body = await request.json()
     password = body.get("password", "")
     app_password = get_secret("APP_PASSWORD", "")
@@ -586,26 +656,31 @@ async def auth(request: Request):
     # Lockout check
     remaining = check_lockout(ip)
     if remaining > 0:
-        raise HTTPException(429, f"Za duzo prob. Odczekaj {remaining} sekund.")
+        return JSONResponse(
+            status_code=429,
+            content={"detail": f"Za dużo prób. Odczekaj {remaining} sekund."},
+            headers={"Retry-After": str(remaining)},
+        )
 
     if not app_password:
-        raise HTTPException(503, "Serwer nie skonfigurowany. Ustaw APP_PASSWORD.")
+        raise HTTPException(503, "Serwer nieskonfigurowany. Ustaw APP_PASSWORD.")
 
     if not _verify_password(password, app_password):
         record_failed_login(ip)
-        raise HTTPException(401, "Nieprawidlowe haslo")
+        await asyncio.sleep(0.5)  # brute-force slowdown
+        raise HTTPException(401, "Nieprawidłowe hasło")
 
     reset_lockout(ip)
     try:
         session = create_session(max_sessions=MAX_CONCURRENT_SESSIONS)
     except TooManySessions:
-        raise HTTPException(429, "Za duzo aktywnych sesji. Sprobuj pozniej.")
-    return {"token": session.token}
+        raise HTTPException(429, "Za dużo aktywnych sesji. Spróbuj później.")
+    return {"token": session.token, "session_id": session.token}
 
 
 @app.get("/api/session/stats")
 async def session_stats(session: SessionData = Depends(require_auth)):
-    """Statystyki sesji: liczniki API, koszt."""
+    """Statystyki sesji: liczniki API, koszty."""
     return {
         "api_calls_count": session.api_calls_count,
         "image_gen_count": session.image_gen_count,
@@ -616,9 +691,38 @@ async def session_stats(session: SessionData = Depends(require_auth)):
     }
 
 
+_startup_time = time.time()
+
+
+@app.get("/api/health")
+async def health():
+    """Endpoint monitoringu. Sprawdza czy aplikacja działa."""
+    gemini_ok = bool(get_secret("GEMINI_API_KEY"))
+    fal_ok = bool(get_secret("FAL_AI_API_KEY"))
+    openai_ok = bool(get_secret("OPENAI_API_KEY"))
+    password_ok = bool(get_secret("APP_PASSWORD"))
+    rembg_ok = REMBG_AVAILABLE
+    all_ok = gemini_ok and fal_ok and password_ok
+    active_sessions = len([s for s in sessions.values() if s.job_status == "running"])
+    return {
+        "status": "ok" if all_ok else "degraded",
+        "version": "4.3",
+        "uptime_seconds": int(time.time() - _startup_time),
+        "active_sessions": active_sessions,
+        "total_sessions": len(sessions),
+        "services": {
+            "gemini": "configured" if gemini_ok else "missing",
+            "fal_ai": "configured" if fal_ok else "missing",
+            "openai": "configured" if openai_ok else "missing",
+            "rembg": "available" if rembg_ok else "unavailable",
+            "auth": "configured" if password_ok else "missing",
+        },
+    }
+
+
 @app.get("/api/catalogs")
 async def catalogs_list():
-    """Lista katalogow produktowych."""
+    """Lista katalogów produktowych."""
     names = get_catalog_display_names()
     return [{"key": k, "name": v} for k, v in names.items()]
 
@@ -642,11 +746,11 @@ async def catalog_colors(key: str):
 
 @app.post("/api/analyze")
 async def analyze_product(request: Request, session: SessionData = Depends(require_auth)):
-    """Krok 1 nowego flow: AI analizuje zdjecia + specyfikacje i zwraca sugestie.
+    """Krok 1 nowego flow: AI analizuje zdjęcia + specyfikację i zwraca sugestie.
 
     Marcin potwierdza/modyfikuje sugestie, potem generuje.
     Input: multipart/form-data (catalog_key, specyfikacja, files).
-    Output: JSON z sugestiami kategorii, kolorow, features.
+    Output: JSON z sugestiami kategorii, kolorów, features.
     """
     form = await request.form()
 
@@ -662,20 +766,20 @@ async def analyze_product(request: Request, session: SessionData = Depends(requi
 
     spec_stripped = specyfikacja.strip() if isinstance(specyfikacja, str) else ""
     if not spec_stripped:
-        raise HTTPException(400, "Wklej specyfikacje produktu.")
+        raise HTTPException(400, "Wklej specyfikację produktu.")
     if len(spec_stripped) > 5000:
-        raise HTTPException(400, f"Specyfikacja za dluga ({len(spec_stripped)} zn.). Maksimum: 5000.")
+        raise HTTPException(400, f"Specyfikacja za długa ({len(spec_stripped)} zn.). Maksimum: 5000.")
 
-    # Walidacja plikow
+    # Walidacja plików
     files = form.getlist("files")
     if not files:
-        raise HTTPException(400, "Wgraj co najmniej 1 zdjecie produktu.")
+        raise HTTPException(400, "Wgraj co najmniej 1 zdjęcie produktu.")
     if len(files) > MAX_FILES:
-        raise HTTPException(400, f"Za duzo plikow ({len(files)}). Maksimum: {MAX_FILES}.")
+        raise HTTPException(400, f"Za dużo plików ({len(files)}). Maksimum: {MAX_FILES}.")
 
     # Limit API
     if session.api_calls_count >= MAX_API_CALLS_PER_SESSION:
-        raise HTTPException(429, f"Osiagnieto limit {MAX_API_CALLS_PER_SESSION} zapytan w tej sesji.")
+        raise HTTPException(429, f"Osiągnięto limit {MAX_API_CALLS_PER_SESSION} zapytań w tej sesji.")
 
     # Zapisz pliki na dysk
     analysis_id = uuid.uuid4().hex[:12]
@@ -690,17 +794,17 @@ async def analyze_product(request: Request, session: SessionData = Depends(requi
         else:
             content = file_field if isinstance(file_field, bytes) else str(file_field).encode()
         if len(content) > max_bytes:
-            raise HTTPException(400, f"Plik {i+1} jest za duzy. Maksymalny rozmiar: {MAX_UPLOAD_SIZE_MB} MB.")
+            raise HTTPException(400, f"Plik {i+1} jest za duży. Maksymalny rozmiar: {MAX_UPLOAD_SIZE_MB} MB.")
         if not _validate_image_magic(content):
-            raise HTTPException(400, f"Plik {i+1}: niedozwolony format. Dozwolone: JPEG, PNG, WebP.")
+            raise HTTPException(400, f"Plik {i+1}: niedozwolony format. Dozwolone: JPEG, PNG, WebP")
         path = job_dir / f"source_{i}.png"
         path.write_bytes(content)
         source_paths.append(str(path))
 
-    # Zaladuj PIL images
-    api_key = get_secret("GEMINI_API_KEY")
-    if not api_key or not GENAI_AVAILABLE:
-        raise HTTPException(500, "Brak konfiguracji Gemini API.")
+    # Załaduj PIL images
+    client = get_genai_client()
+    if not client:
+        raise HTTPException(500, "Brak konfiguracji Gemini API")
 
     pil_images = []
     for sp in source_paths:
@@ -708,11 +812,11 @@ async def analyze_product(request: Request, session: SessionData = Depends(requi
             img = PIL.Image.open(sp)
             img.load()
             pil_images.append(img)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Nie udało się wczytać obrazu %s: %s", sp, str(e)[:100])
 
     if not pil_images:
-        raise HTTPException(400, "Zadne zdjecie nie zostalo wczytane.")
+        raise HTTPException(400, "Żadne zdjęcie nie zostało wczytane.")
 
     # Przygotuj dane do promptu
     kolory_pe = get_kolory_per_element(catalog_key)
@@ -727,8 +831,7 @@ async def analyze_product(request: Request, session: SessionData = Depends(requi
         required_features=features_info["required"],
     )
 
-    # Wywolaj Gemini
-    client = genai.Client(api_key=api_key)
+    # Wywołaj Gemini
     contents = [prompt] + pil_images[:4]
 
     try:
@@ -748,14 +851,14 @@ async def analyze_product(request: Request, session: SessionData = Depends(requi
     session.text_gen_count += 1
 
     if not response.parts:
-        raise HTTPException(500, "Gemini nie zwrocil odpowiedzi.")
+        raise HTTPException(500, "Gemini nie zwrócił odpowiedzi.")
 
     raw_text = ""
     for part in response.parts:
         if part.text:
             raw_text += part.text
 
-    # Parsuj JSON z odpowiedzi
+    # Parsuj JSON z odpowiedzi Gemini
     raw_text = raw_text.strip()
     if "```" in raw_text:
         parts = raw_text.split("```")
@@ -770,9 +873,9 @@ async def analyze_product(request: Request, session: SessionData = Depends(requi
     try:
         suggestions = json.loads(raw_text)
     except json.JSONDecodeError:
-        raise HTTPException(500, "Gemini nie zwrocil prawidlowego JSON. Sprobuj ponownie.")
+        raise HTTPException(500, "Gemini nie zwrócił prawidłowego JSON. Spróbuj ponownie.")
 
-    # Zapisz w sesji
+    # Zapisz dane w sesji
     analysis_data = {
         "analysis_id": analysis_id,
         "suggestions": suggestions,
@@ -793,38 +896,76 @@ async def analyze_product(request: Request, session: SessionData = Depends(requi
 
 @app.post("/api/generate")
 async def generate(request: Request, session: SessionData = Depends(require_auth)):
-    """Uruchamia generowanie aukcji. Zwraca job_id do sledzenia przez SSE."""
-    form = await request.form()
+    """Uruchamia generowanie aukcji. Zwraca job_id do śledzenia przez SSE."""
+    # Rozpoznaj typ ciała: JSON (React frontend) vs FormData (legacy)
+    content_type = request.headers.get("content-type", "")
+    _is_json = "application/json" in content_type
 
-    # Parsuj pola formularza
-    catalog_key = form.get("catalog_key", "")
-    kategoria = form.get("kategoria", "")
-    specyfikacja = form.get("specyfikacja", "")
-    kolor_zlew = form.get("kolor_zlew", "Czarny nakrapiany")
-    kolor_bateria = form.get("kolor_bateria", "Czarno-zlota")
-    kolor_syfon = form.get("kolor_syfon", "Zloty")
-    kolor_dozownik = form.get("kolor_dozownik", "Zloty")
-    ean_code = form.get("ean_code", "")
-    # Nowy flow: opcjonalne pola z analizy
-    analysis_id = form.get("analysis_id", "")
-    confirmed_kategoria = form.get("confirmed_kategoria", "")
-    confirmed_kolory_raw = form.get("confirmed_kolory", "")
-    confirmed_features_raw = form.get("confirmed_features", "")
-    try:
-        cena_brutto = float(form.get("cena_brutto", 0))
-    except (ValueError, TypeError):
-        cena_brutto = 0.0
-    try:
-        stan_magazyn = int(form.get("stan_magazyn", 1))
-    except (ValueError, TypeError):
-        stan_magazyn = 1
+    if _is_json:
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "Nieprawidłowe dane JSON")
 
-    # Jesli podano analysis_id, pobierz sugestie z sesji
+        # React frontend wysyła: { colors, features, corrections }
+        # Reszta danych pochodzi z session.last_analysis
+        _analysis = session.last_analysis or {}
+        colors = body.get("colors", {})
+
+        catalog_key = _analysis.get("catalog_key", "")
+        kategoria = ""
+        specyfikacja = _analysis.get("specyfikacja", "")
+        kolor_zlew = colors.get("zlew", "Czarny nakrapiany")
+        kolor_bateria = colors.get("bateria", "Czarno-zlota")
+        kolor_syfon = colors.get("syfon", "Zloty")
+        kolor_dozownik = colors.get("dozownik", "Zloty")
+        ean_code = _analysis.get("ean_code", "")
+        analysis_id = _analysis.get("analysis_id", "")
+        confirmed_kategoria = ""
+        confirmed_kolory_raw = json.dumps(colors) if colors else ""
+        confirmed_features_raw = json.dumps(body.get("features", {})) if body.get("features") else ""
+        try:
+            cena_brutto = float(_analysis.get("cena_brutto", 0))
+        except (ValueError, TypeError):
+            cena_brutto = 0.0
+        try:
+            stan_magazyn = int(_analysis.get("stan_magazyn", 1))
+        except (ValueError, TypeError):
+            stan_magazyn = 1
+        _form_files = []
+    else:
+        form = await request.form()
+
+        # Parsuj pola formularza
+        catalog_key = form.get("catalog_key", "")
+        kategoria = form.get("kategoria", "")
+        specyfikacja = form.get("specyfikacja", "")
+        kolor_zlew = form.get("kolor_zlew", "Czarny nakrapiany")
+        kolor_bateria = form.get("kolor_bateria", "Czarno-zlota")
+        kolor_syfon = form.get("kolor_syfon", "Zloty")
+        kolor_dozownik = form.get("kolor_dozownik", "Zloty")
+        ean_code = form.get("ean_code", "")
+        # Nowy flow: opcjonalne pola z analizy
+        analysis_id = form.get("analysis_id", "")
+        confirmed_kategoria = form.get("confirmed_kategoria", "")
+        confirmed_kolory_raw = form.get("confirmed_kolory", "")
+        confirmed_features_raw = form.get("confirmed_features", "")
+        try:
+            cena_brutto = float(form.get("cena_brutto", 0))
+        except (ValueError, TypeError):
+            cena_brutto = 0.0
+        try:
+            stan_magazyn = int(form.get("stan_magazyn", 1))
+        except (ValueError, TypeError):
+            stan_magazyn = 1
+        _form_files = form.getlist("files")
+
+    # Jeśli podano analysis_id, pobierz sugestie z sesji
     if analysis_id and session.last_analysis and session.last_analysis.get("analysis_id") == analysis_id:
         analysis = session.last_analysis
         suggestions = analysis.get("suggestions", {})
 
-        # Uzyj confirmed_* lub fallback na sugestie AI
+        # Użyj confirmed_* lub fallback na sugestie AI
         if confirmed_kategoria:
             kategoria = confirmed_kategoria
         elif not kategoria and suggestions.get("kategoria"):
@@ -857,7 +998,7 @@ async def generate(request: Request, session: SessionData = Depends(require_auth
             if s_kolory.get("dozownik") and kolor_dozownik == "Zloty":
                 kolor_dozownik = s_kolory["dozownik"]
 
-        # Features: zapisz w sesji do uzycia przy push
+        # Features: zapisz w sesji do użycia przy push
         if confirmed_features_raw:
             try:
                 session.last_analysis["confirmed_features"] = json.loads(confirmed_features_raw)
@@ -871,28 +1012,28 @@ async def generate(request: Request, session: SessionData = Depends(require_auth
     if not kategoria:
         raise HTTPException(400, "Brak kategorii.")
 
-    # Walidacja plikow - jesli analysis_id, zdjecia juz sa na dysku
-    files = form.getlist("files")
+    # Walidacja plików - jeśli analysis_id, zdjęcia już są na dysku
+    files = _form_files
     source_paths = []
     job_id = uuid.uuid4().hex[:12]
     job_dir = UPLOADS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
     if not files and analysis_id and session.last_analysis:
-        # Uzyj zdjec z analizy
+        # Użyj zdjęć z analizy
         analysis_source = session.last_analysis.get("source_paths", [])
         if not analysis_source:
-            raise HTTPException(400, "Wgraj co najmniej 1 zdjecie produktu.")
+            raise HTTPException(400, "Wgraj co najmniej 1 zdjęcie produktu.")
         for i, sp in enumerate(analysis_source):
             if Path(sp).exists():
                 dest = job_dir / f"source_{i}.png"
                 shutil.copy2(sp, dest)
                 source_paths.append(str(dest))
         if not source_paths:
-            raise HTTPException(400, "Zdjecia z analizy nie sa juz dostepne. Wgraj ponownie.")
+            raise HTTPException(400, "Zdjęcia z analizy nie są już dostępne. Wgraj ponownie.")
     elif files:
         if len(files) > MAX_FILES:
-            raise HTTPException(400, f"Za duzo plikow ({len(files)}). Maksimum: {MAX_FILES}.")
+            raise HTTPException(400, f"Za dużo plików ({len(files)}). Maksimum: {MAX_FILES}.")
         gen_max_bytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024
         for i, file_field in enumerate(files):
             if hasattr(file_field, 'read'):
@@ -900,29 +1041,30 @@ async def generate(request: Request, session: SessionData = Depends(require_auth
             else:
                 content = file_field if isinstance(file_field, bytes) else str(file_field).encode()
             if len(content) > gen_max_bytes:
-                raise HTTPException(400, f"Plik {i+1} jest za duzy. Maksymalny rozmiar: {MAX_UPLOAD_SIZE_MB} MB.")
+                raise HTTPException(400, f"Plik {i+1} jest za duży. Maksymalny rozmiar: {MAX_UPLOAD_SIZE_MB} MB.")
             if not _validate_image_magic(content):
-                raise HTTPException(400, f"Plik {i+1}: niedozwolony format. Dozwolone: JPEG, PNG, WebP.")
+                raise HTTPException(400, f"Plik {i+1}: niedozwolony format. Dozwolone: JPEG, PNG, WebP")
             path = job_dir / f"source_{i}.png"
             path.write_bytes(content)
             source_paths.append(str(path))
     else:
-        raise HTTPException(400, "Wgraj co najmniej 1 zdjecie produktu.")
+        raise HTTPException(400, "Wgraj co najmniej 1 zdjęcie produktu.")
 
     # Walidacja specyfikacji
     spec_stripped = specyfikacja.strip() if isinstance(specyfikacja, str) else ""
     if not spec_stripped:
-        raise HTTPException(400, "Wklej specyfikacje produktu.")
+        raise HTTPException(400, "Wklej specyfikację produktu.")
     if len(spec_stripped) > 5000:
-        raise HTTPException(400, f"Specyfikacja za dluga ({len(spec_stripped)} zn.). Maksimum: 5000.")
+        raise HTTPException(400, f"Specyfikacja za długa ({len(spec_stripped)} zn.). Maksimum: 5000.")
 
     # Limit API
     if session.api_calls_count >= MAX_API_CALLS_PER_SESSION:
-        raise HTTPException(429, f"Osiagnieto limit {MAX_API_CALLS_PER_SESSION} generowan w tej sesji.")
+        raise HTTPException(429, f"Osiągnięto limit {MAX_API_CALLS_PER_SESSION} generowań w tej sesji.")
 
-    # Ustawienia sesji
+    # Konfiguracja sesji
     session.job_id = job_id
     session.job_status = "running"
+    session.cancel_requested = False
     session.job_progress = 0.0
     session.job_message = ""
     session.job_error = ""
@@ -943,6 +1085,11 @@ async def generate(request: Request, session: SessionData = Depends(require_auth
     session.image_chat_history = {}
     session.description_revisions = []
     session.desc_chat_history = []
+    session.current_phase = "idle"
+    session.phase_event = None
+    session.phase_feedback = ""
+    session.phase_round = 0
+    session.phase_approved = False
     session.sse_queue = asyncio.Queue()
 
     # Background task
@@ -965,23 +1112,25 @@ async def generate_stream_ticket(session: SessionData = Depends(require_auth)):
 
 @app.get("/api/generate/stream/{job_id}")
 async def generate_stream(job_id: str, request: Request, ticket: str = Query("")):
-    """SSE stream dla postepow generowania."""
+    """SSE stream dla postępów generowania."""
     # Auth: jednorazowy ticket (token sesji NIE w URL)
     if not ticket:
-        raise HTTPException(401, "Brak ticketu SSE. Uzyj POST /api/generate/stream-ticket")
+        raise HTTPException(401, "Brak ticketu SSE. Użyj POST /api/generate/stream-ticket")
     session = validate_sse_ticket(ticket)
     if not session:
-        raise HTTPException(401, "Ticket wygasl lub juz uzyty")
+        raise HTTPException(401, "Ticket wygasł lub już użyty")
     if session.job_id != job_id:
         raise HTTPException(404, "Nieznany job_id")
 
     async def event_generator():
-        # Jesli job juz zakonczony
-        if session.job_status in ("done", "error"):
+        # Jeśli job już zakończony
+        if session.job_status in ("done", "error", "cancelled"):
             if session.job_status == "error":
                 yield f"event: error\ndata: {json.dumps({'message': session.job_error})}\n\n"
+            elif session.job_status == "cancelled":
+                yield f"event: cancelled\ndata: {json.dumps({'message': 'Anulowano'})}\n\n"
             else:
-                yield f"event: complete\ndata: {json.dumps({'message': 'Zakonczono'})}\n\n"
+                yield f"event: complete\ndata: {json.dumps({'message': 'Zakończono'})}\n\n"
             return
 
         queue = session.sse_queue
@@ -1009,7 +1158,7 @@ async def generate_stream(job_id: str, request: Request, ticket: str = Query("")
             data = event.get("data", {})
             yield f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
-            if event_type in ("complete", "error"):
+            if event_type in ("complete", "error", "cancelled"):
                 break
 
     return StreamingResponse(
@@ -1029,20 +1178,22 @@ async def get_image(job_id: str, key: str, session: SessionData = Depends(requir
     _validate_path_segment(job_id, "job_id")
     _validate_path_segment(key, "key")
 
+    _cache_headers = {"Cache-Control": "private, max-age=3600, immutable"}
+
     # Szukaj w results_images
     file_path = session.results_images.get(key)
     if file_path and Path(file_path).exists():
         resolved = Path(file_path).resolve()
         if not str(resolved).startswith(str(BASE_DIR.resolve())):
-            raise HTTPException(403, "Niedozwolona sciezka")
-        return FileResponse(resolved, media_type="image/png")
+            raise HTTPException(403, "Niedozwolona ścieżka")
+        return FileResponse(resolved, media_type="image/png", headers=_cache_headers)
 
     # Fallback: uploads/{job_id}/{key}.png
     fallback = (UPLOADS_DIR / job_id / f"{key}.png").resolve()
     if not str(fallback).startswith(str(UPLOADS_DIR.resolve())):
-        raise HTTPException(403, "Niedozwolona sciezka")
+        raise HTTPException(403, "Niedozwolona ścieżka")
     if fallback.exists():
-        return FileResponse(fallback, media_type="image/png")
+        return FileResponse(fallback, media_type="image/png", headers=_cache_headers)
 
     raise HTTPException(404, "Obraz nie znaleziony")
 
@@ -1058,13 +1209,24 @@ async def get_results(job_id: str, session: SessionData = Depends(require_auth))
     for key in session.results_images:
         images_urls[key] = f"/api/images/{job_id}/{key}"
 
+    # Mapuj sekcje na format frontend
+    raw_sections = session.results_sections or {}
+    mapped_sections = {
+        "title": raw_sections.get("tytul", ""),
+        "description": raw_sections.get("opis", ""),
+        "features": raw_sections.get("parametry_dict", {}),
+        "category": raw_sections.get("kategoria", ""),
+    }
+
     return {
         "status": session.job_status,
-        "sections": session.results_sections,
-        "desc_raw": session.results_desc_raw,
-        "images": images_urls,
+        "sections": mapped_sections,
+        "description_html": session.results_desc_raw or "",
+        "images": _images_dict_to_list(images_urls),
         "timestamp": session.results_timestamp,
-        "cost_pln": round(_session_cost_pln(session), 2),
+        "total_cost": round(session.total_cost_usd, 4),
+        "model_costs": session.model_costs,
+        "elapsed_sec": session.pipeline_elapsed_sec,
     }
 
 
@@ -1075,15 +1237,16 @@ async def get_results_zip(job_id: str, session: SessionData = Depends(require_au
     if session.job_id != job_id:
         raise HTTPException(404, "Nieznany job_id")
     if not session.results_images:
-        raise HTTPException(404, "Brak wynikow do pobrania")
+        raise HTTPException(404, "Brak wyników do pobrania")
 
     timestamp = session.results_timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
     zip_path = OUTPUT_DIR / f"aukcja_{timestamp}.zip"
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     desc_text = session.results_sections.get("opis", "") or session.results_desc_raw
-    create_zip(session.results_images, desc_text, zip_path)
-    cleanup_old_outputs(OUTPUT_DIR, max_files=50)
+    features = session.results_sections.get("parametry_dict", {})
+    await asyncio.to_thread(create_zip, session.results_images, desc_text, zip_path, features)
+    await asyncio.to_thread(cleanup_old_outputs, OUTPUT_DIR, 50)
 
     return FileResponse(
         zip_path,
@@ -1104,20 +1267,18 @@ async def chat_image(request: Request, session: SessionData = Depends(require_au
     if not instruction:
         raise HTTPException(400, "Brak instrukcji")
     if session.regen_count >= MAX_REGEN_PER_SESSION:
-        raise HTTPException(429, f"Limit regeneracji ({MAX_REGEN_PER_SESSION}) osiagniety.")
+        raise HTTPException(429, f"Limit regeneracji ({MAX_REGEN_PER_SESSION}) osiągnięty.")
 
-    # Laduj obraz z dysku
+    # Ładuj obraz z dysku
     file_path = session.results_images.get(image_key)
     if not file_path or not Path(file_path).exists():
         raise HTTPException(404, f"Obraz '{image_key}' nie znaleziony")
 
-    api_key = get_secret("GEMINI_API_KEY")
-    if not api_key or not GENAI_AVAILABLE:
+    client = get_genai_client()
+    if not client:
         raise HTTPException(500, "Brak konfiguracji Gemini API")
 
-    client = genai.Client(api_key=api_key)
-
-    # Laduj aktualny obraz
+    # Ładuj aktualny obraz
     current_img = PIL.Image.open(file_path)
     current_img.load()
 
@@ -1150,7 +1311,7 @@ async def chat_image(request: Request, session: SessionData = Depends(require_au
             _si.close()
 
     if not new_img:
-        return {"success": False, "message": "Gemini nie zwrocil obrazu. Sprobuj ponownie."}
+        return {"success": False, "message": "Gemini nie zwrócił obrazu. Spróbuj ponownie."}
 
     # Zapisz nowy obraz
     job_dir = Path(session.results_dir) if session.results_dir else UPLOADS_DIR / (session.job_id or "unknown")
@@ -1181,7 +1342,7 @@ async def chat_image(request: Request, session: SessionData = Depends(require_au
 
 @app.post("/api/chat/description")
 async def chat_description(request: Request, session: SessionData = Depends(require_auth)):
-    """Poprawka opisu aukcji przez czat lub reczna edycja HTML."""
+    """Poprawka opisu aukcji przez czat lub ręczna edycja HTML."""
     body = await request.json()
     instruction = _sanitize_feedback(body.get("instruction", ""))
     manual_html = body.get("manual_html", "").strip()
@@ -1194,20 +1355,19 @@ async def chat_description(request: Request, session: SessionData = Depends(requ
         session.description_revisions.append(current_desc)
         session.results_sections["opis"] = safe_html
         session.results_desc_raw = safe_html
-        return {"success": True, "html": safe_html, "message": "Opis zaktualizowany recznie."}
+        return {"success": True, "html": safe_html, "message": "Opis zaktualizowany ręcznie."}
 
     if not instruction:
         raise HTTPException(400, "Brak instrukcji lub manual_html")
 
     # Limit rewizji
     if len(session.description_revisions) >= 5:
-        raise HTTPException(429, "Limit rewizji opisu (5) osiagniety.")
+        raise HTTPException(429, "Limit rewizji opisu (5) osiągnięty.")
 
-    api_key = get_secret("GEMINI_API_KEY")
-    if not api_key or not GENAI_AVAILABLE:
+    client = get_genai_client()
+    if not client:
         raise HTTPException(500, "Brak konfiguracji Gemini API")
 
-    client = genai.Client(api_key=api_key)
     prompt = get_description_revision_prompt(current_desc, instruction)
 
     try:
@@ -1224,7 +1384,7 @@ async def chat_description(request: Request, session: SessionData = Depends(requ
         return {"success": False, "message": get_user_error(e)}
 
     if not response.parts:
-        return {"success": False, "message": "Gemini nie zwrocil odpowiedzi."}
+        return {"success": False, "message": "Gemini nie zwrócił odpowiedzi."}
 
     new_html = ""
     for part in response.parts:
@@ -1232,7 +1392,7 @@ async def chat_description(request: Request, session: SessionData = Depends(requ
             new_html += part.text
 
     new_html = new_html.strip()
-    # Usun markdown code block
+    # Usuń markdown code block
     if new_html.startswith("```"):
         lines = new_html.split("\n")
         lines = [l for l in lines if not l.strip().startswith("```")]
@@ -1241,7 +1401,7 @@ async def chat_description(request: Request, session: SessionData = Depends(requ
     safe_html = sanitize_html(new_html)
     banned = check_ban_list(safe_html)
 
-    # Zapisz rewizje
+    # Zapisz rewizję
     session.description_revisions.append(current_desc)
     session.results_sections["opis"] = safe_html
     session.results_desc_raw = safe_html
@@ -1263,20 +1423,20 @@ async def chat_description(request: Request, session: SessionData = Depends(requ
 
 @app.post("/api/chat/description/undo")
 async def chat_description_undo(session: SessionData = Depends(require_auth)):
-    """Cofa ostatnia rewizje opisu."""
+    """Cofa ostatnią rewizję opisu."""
     if not session.description_revisions:
-        raise HTTPException(400, "Brak rewizji do cofniecia.")
+        raise HTTPException(400, "Brak rewizji do cofnięcia.")
 
     previous = session.description_revisions.pop()
     session.results_sections["opis"] = previous
     session.results_desc_raw = previous
 
-    return {"success": True, "html": previous, "message": "Cofnieto ostatnia zmiane."}
+    return {"success": True, "html": previous, "message": "Cofnięto ostatnią zmianę."}
 
 
 @app.post("/api/baselinker/test")
 async def baselinker_test(request: Request, session: SessionData = Depends(require_auth)):
-    """Test polaczenia z BaseLinker."""
+    """Test połączenia z BaseLinker."""
     body = await request.json()
     inventory_id = body.get("inventory_id", 0)
     bl_token = get_secret("BASELINKER_TOKEN")
@@ -1287,14 +1447,14 @@ async def baselinker_test(request: Request, session: SessionData = Depends(requi
         result = await asyncio.to_thread(
             bl_request, "getInventoryProductsList", {"inventory_id": inventory_id}, bl_token
         )
-        return {"success": True, "message": "Polaczenie OK. Znaleziono produkty w katalogu."}
+        return {"success": True, "message": "Połączenie OK. Znaleziono produkty w katalogu."}
     except Exception as e:
         return {"success": False, "message": str(e)[:200]}
 
 
 @app.post("/api/baselinker/push")
 async def baselinker_push(request: Request, session: SessionData = Depends(require_auth)):
-    """Wysyla produkt do BaseLinker."""
+    """Wysyła produkt do BaseLinker."""
     body = await request.json()
     name = body.get("name", "")
     description = body.get("description", "")
@@ -1312,7 +1472,7 @@ async def baselinker_push(request: Request, session: SessionData = Depends(requi
     warehouse_id = body.get("warehouse_id", get_secret("BASELINKER_WAREHOUSE_ID", "bl_5255"))
     force_overwrite = body.get("force_overwrite", False)
 
-    # Fallback: features z analizy (jesli nie podano w body)
+    # Fallback: features z analizy (jeśli nie podano w body)
     if not features and session.last_analysis:
         features = session.last_analysis.get("confirmed_features", {})
 
@@ -1322,7 +1482,7 @@ async def baselinker_push(request: Request, session: SessionData = Depends(requi
 
     # Blokada cena = 0
     if cena_brutto == 0:
-        return {"success": False, "message": "Cena = 0.00 zl. Ustaw cene > 0 przed wysylka."}
+        return {"success": False, "message": "Cena = 0.00 zł. Ustaw cenę > 0 przed wysyłką."}
 
     # Deduplikacja SKU
     try:
@@ -1336,10 +1496,10 @@ async def baselinker_push(request: Request, session: SessionData = Depends(requi
             "success": False,
             "duplicate": True,
             "existing_id": existing_id,
-            "message": f"Produkt z SKU '{sku}' juz istnieje (ID: {existing_id}). Uzyj force_overwrite=true.",
+            "message": f"Produkt z SKU '{sku}' już istnieje (ID: {existing_id}). Użyj force_overwrite=true.",
         }
 
-    # Laduj obrazy PIL z dysku (bez oryginalow)
+    # Ładuj obrazy PIL z dysku (bez oryginałów do BaseLinker)
     images_dict = {}
     for key, file_path in session.results_images.items():
         if key.startswith("zdjecie_oryginalne_") or key.startswith("original_"):
@@ -1379,7 +1539,7 @@ async def baselinker_push(request: Request, session: SessionData = Depends(requi
             features=features,
         )
         product_id = result.get("product_id", "?")
-        return {"success": True, "product_id": product_id, "message": f"Wyslano do BaseLinker (ID: {product_id})"}
+        return {"success": True, "product_id": product_id, "message": f"Wysłano do BaseLinker (ID: {product_id})"}
     except Exception as e:
         return {"success": False, "message": str(e)[:200]}
     finally:
@@ -1397,7 +1557,7 @@ async def history_list(session: SessionData = Depends(require_auth)):
 @app.post("/api/draft/save")
 async def draft_save(request: Request, session: SessionData = Depends(require_auth)):
     """Zapisuje aktualny stan jako szkic."""
-    # Buduj grafiki_b64 z plikow na dysku
+    # Buduj grafiki_b64 z plików na dysku
     grafiki_b64 = {}
     for key, file_path in session.results_images.items():
         if key.startswith("zdjecie_oryginalne_") or key.startswith("original_"):
@@ -1433,11 +1593,11 @@ async def draft_save(request: Request, session: SessionData = Depends(require_au
 
 @app.get("/api/draft/{auction_id}")
 async def draft_load(auction_id: str, session: SessionData = Depends(require_auth)):
-    """Laduje szkic aukcji."""
+    """Ładuje szkic aukcji."""
     _validate_path_segment(auction_id, "auction_id")
     data = load_auction(auction_id)
     if not data:
-        raise HTTPException(404, "Szkic nie znaleziony")
+        raise HTTPException(404, "Szkic nieznaleziony")
     return data
 
 
@@ -1446,7 +1606,7 @@ async def history_export(session: SessionData = Depends(require_auth)):
     """Eksportuje wszystkie aukcje jako ZIP."""
     data = export_all_auctions()
     if not data:
-        raise HTTPException(404, "Brak aukcji do eksportu")
+        raise HTTPException(404, "Brak aukcji do eksportu.")
 
     return StreamingResponse(
         io.BytesIO(data),
@@ -1458,18 +1618,18 @@ async def history_export(session: SessionData = Depends(require_auth)):
 
 
 # ---------------------------------------------------------------------------
-# Pipeline v3.0: Bramki fazowe (approve/feedback/status)
+# Pipeline v4.3: Bramki fazowe (approve/feedback/status)
 # ---------------------------------------------------------------------------
 
 
 @app.post("/api/generate/approve")
 async def approve_phase(request: Request, session: SessionData = Depends(require_auth)):
-    """Akceptacja biezacej fazy (phase1_approval lub phase2_approval)."""
+    """Akceptacja bieżącej fazy (phase1_approval lub phase2_approval)."""
     if not session.job_id:
-        return JSONResponse({"error": "Brak aktywnego generowania"}, status_code=400)
+        return JSONResponse({"error": "Brak aktywnej generacji"}, status_code=400)
     if session.current_phase not in ("phase1_approval", "phase2_approval"):
         return JSONResponse(
-            {"error": f"Nie jestes w fazie akceptacji, biezaca: {session.current_phase}"},
+            {"error": f"Nie jesteś w fazie akceptacji, bieżąca: {session.current_phase}"},
             status_code=400,
         )
     session.phase_approved = True
@@ -1481,12 +1641,12 @@ async def approve_phase(request: Request, session: SessionData = Depends(require
 
 @app.post("/api/generate/feedback")
 async def phase_feedback(request: Request, session: SessionData = Depends(require_auth)):
-    """Feedback do biezacej fazy (popraw i regeneruj)."""
+    """Feedback do bieżącej fazy (popraw i regeneruj)."""
     if not session.job_id:
-        return JSONResponse({"error": "Brak aktywnego generowania"}, status_code=400)
+        return JSONResponse({"error": "Brak aktywnej generacji"}, status_code=400)
     if session.current_phase not in ("phase1_approval", "phase2_approval"):
         return JSONResponse(
-            {"error": "Nie jestes w fazie akceptacji"},
+            {"error": "Nie jesteś w fazie akceptacji"},
             status_code=400,
         )
     body = await request.json()
@@ -1515,20 +1675,19 @@ async def generation_status(session: SessionData = Depends(require_auth)):
 
 @app.post("/api/generate/cancel")
 async def cancel_generation(request: Request, session: SessionData = Depends(require_auth)):
-    """Anuluj trwajace generowanie."""
+    """Anuluj trwające generowanie."""
     if not session.job_id:
-        return JSONResponse({"error": "Brak aktywnego generowania"}, status_code=400)
+        return JSONResponse({"error": "Brak aktywnej generacji"}, status_code=400)
     session.cancel_requested = True
-    session.job_status = "idle"
-    session.current_phase = "idle"
-    if session.sse_queue:
-        await session.sse_queue.put({"event": "cancelled", "data": {"message": "Anulowano"}})
+    # Odblokuj ewentualnie czekający phase_event (bramka approve/feedback)
+    if session.phase_event:
+        session.phase_event.set()
     return {"status": "cancelled"}
 
 
 @app.get("/api/providers/status")
 async def providers_status(session: SessionData = Depends(require_auth)):
-    """Health check providerow obrazow."""
+    """Health check providerów obrazów."""
     return await get_provider_status()
 
 
@@ -1543,13 +1702,14 @@ _lora_training_status: dict = {"status": "idle"}
 
 @app.post("/api/lora/train")
 async def lora_train(request: Request, session: SessionData = Depends(require_auth)):
-    """Uruchom trening LoRA na zdjeciach z folderu training/."""
+    """Uruchom trening LoRA na zdjęciach z folderu training/."""
     global _lora_training_task, _lora_training_status
 
     if _lora_training_task and not _lora_training_task.done():
-        raise HTTPException(409, "Trening juz w toku")
+        raise HTTPException(409, "Trening już w toku")
 
-    body = await request.json() if request.headers.get("content-type") == "application/json" else {}
+    ct = request.headers.get("content-type", "")
+    body = await request.json() if "application/json" in ct else {}
     steps = body.get("steps", 1000)
     image_dir = body.get("image_dir", "training")
 
@@ -1575,7 +1735,7 @@ async def lora_train(request: Request, session: SessionData = Depends(require_au
                 "completed_at": datetime.now().isoformat(),
             }
         except Exception as e:
-            logger.error(f"LoRA training failed: {e}")
+            logger.error("LoRA training failed: %s", e)
             _lora_training_status = {
                 "status": "error",
                 "error": str(e)[:500],
@@ -1610,7 +1770,8 @@ async def lora_test(request: Request, session: SessionData = Depends(require_aut
     if not lora_url:
         raise HTTPException(404, "Brak aktywnej wersji LoRA")
 
-    body = await request.json() if request.headers.get("content-type") == "application/json" else {}
+    ct = request.headers.get("content-type", "")
+    body = await request.json() if "application/json" in ct else {}
     prompts = body.get("prompts", None)
 
     result = await _lora_trainer.validate(lora_url, prompts)
@@ -1619,7 +1780,7 @@ async def lora_test(request: Request, session: SessionData = Depends(require_aut
 
 @app.post("/api/lora/rollback/{version}")
 async def lora_rollback(version: str, session: SessionData = Depends(require_auth)):
-    """Przywroc wczesniejsza wersje LoRA."""
+    """Przywróć wcześniejszą wersję LoRA."""
     success = await _lora_trainer.rollback(version)
     if not success:
         raise HTTPException(404, f"Wersja {version} nie istnieje")
@@ -1633,9 +1794,26 @@ async def lora_rollback(version: str, session: SessionData = Depends(require_aut
 
 
 async def _send_event(queue: asyncio.Queue | None, event_type: str, data: dict):
-    """Wysyla event SSE do kolejki sesji."""
+    """Wysyła event SSE do kolejki sesji."""
     if queue is not None:
         await queue.put({"type": event_type, "data": data})
+
+
+def _images_dict_to_list(images_dict: dict[str, str]) -> list[dict]:
+    """Konwertuje dict {key: url} na listę obiektów GeneratedImage-compatible."""
+    result = []
+    for key, url in images_dict.items():
+        if key.startswith("original_"):
+            img_type = "packshot"
+        elif "packshot" in key:
+            img_type = "packshot"
+        elif "composite" in key:
+            img_type = "composite"
+        else:
+            img_type = "lifestyle"
+        label = key.rsplit("_", 1)[0].replace("_", " ").title()
+        result.append({"key": key, "url": url, "type": img_type, "label": label})
+    return result
 
 
 async def _run_generation(
@@ -1654,7 +1832,7 @@ async def _run_generation(
     cena_brutto: float,
     stan_magazyn: int,
 ):
-    """Pipeline v3.0: 2-fazowy flow z bramkami approve/feedback.
+    """Pipeline v4.3: 2-fazowy flow z bramkami approve/feedback.
 
     [0] rembg -> transparent PNG
     [1] Gemini TEXT -> Product DNA
@@ -1667,26 +1845,25 @@ async def _run_generation(
     session.results_timestamp = timestamp
     pil_images: list = []
     transparent_images: list = []
+    pipeline_start = time.monotonic()
 
     def _check_cancel() -> bool:
-        """Sprawdza czy uzytkownik anulował generowanie."""
+        """Sprawdza czy użytkownik anulował generowanie."""
         if session.cancel_requested:
-            session.job_status = "idle"
+            session.job_status = "cancelled"
             session.current_phase = "idle"
             return True
         return False
 
     try:
-        api_key = get_secret("GEMINI_API_KEY")
-        if not api_key or not GENAI_AVAILABLE:
+        client = get_genai_client()
+        if not client:
             await _send_event(queue, "error", {"message": "Brak klucza GEMINI_API_KEY."})
             session.job_status = "error"
             session.job_error = "Brak klucza GEMINI_API_KEY."
             return
 
-        client = genai.Client(api_key=api_key)
-
-        # Laduj PIL images z dysku
+        # Ładuj PIL images z dysku
         pil_images = []
         for sp in source_paths:
             try:
@@ -1694,16 +1871,16 @@ async def _run_generation(
                 img.load()
                 pil_images.append(img)
             except Exception:
-                await _send_event(queue, "warning", {"message": f"Plik {sp} uszkodzony, pominieto."})
+                await _send_event(queue, "warning", {"message": f"Plik {sp} uszkodzony, pominięto."})
 
         if not pil_images:
-            await _send_event(queue, "error", {"message": "Zadne zdjecie nie zostalo wczytane."})
+            await _send_event(queue, "error", {"message": "Żadne zdjęcie nie zostało wczytane."})
             session.job_status = "error"
-            session.job_error = "Brak zdjec."
+            session.job_error = "Brak zdjęć."
             return
 
         # --- [0] Ekstrakcja specyfikacji ---
-        await _send_event(queue, "progress", {"step": 0, "total": 12, "message": "Analizuje specyfikacje..."})
+        await _send_event(queue, "progress", {"step": 0, "total": 12, "message": "Analizuję specyfikację..."})
 
         extracted = await _api_call_with_timeout(
             asyncio.to_thread(extract_spec_data, client, specyfikacja, pil_images[:4])
@@ -1719,7 +1896,7 @@ async def _run_generation(
 
         # --- [0] Background Removal (rembg) ---
         session.current_phase = "dna"
-        await _send_event(queue, "progress", {"step": 1, "total": 12, "message": "Usuwanie tla ze zdjec..."})
+        await _send_event(queue, "progress", {"step": 1, "total": 12, "message": "Usuwanie tła ze zdjęć..."})
         transparent_images = []
         for img in pil_images:
             try:
@@ -1737,11 +1914,11 @@ async def _run_generation(
 
         await _send_event(queue, "background_removed", {
             "count": len(transparent_images),
-            "message": f"Usunieto tlo z {len(transparent_images)} zdjec",
+            "message": f"Usunięto tło z {len(transparent_images)} zdjęć",
         })
 
         if _check_cancel():
-            await _send_event(queue, "cancelled", {"message": "Anulowano przez uzytkownika"})
+            await _send_event(queue, "cancelled", {"message": "Anulowano przez użytkownika"})
             return
 
         # --- [1] Product DNA (Gemini TEXT) ---
@@ -1753,7 +1930,7 @@ async def _run_generation(
             session.text_gen_count += 1
             _track_cost(session, "gemini-text", COST_GEMINI_TEXT_USD)
         except Exception as e:
-            logger.error(f"[{session.job_id}] Product DNA failed: {str(e)[:200]}", exc_info=True)
+            logger.error("[%s] Product DNA failed: %.200s", session.job_id, e, exc_info=True)
             await _send_event(queue, "warning", {"message": f"Analiza produktu: {get_user_error(e)}"})
 
         # Zapisz DNA w sesji
@@ -1763,6 +1940,10 @@ async def _run_generation(
             session.product_dna = {}
 
         await _send_event(queue, "product_dna", {"dna": product_dna_json})
+        await _send_event(queue, "cost_update", {
+            "total": round(session.total_cost_usd, 4),
+            "per_model": session.model_costs,
+        })
         await asyncio.sleep(RATE_LIMIT_SEC)
 
         # =====================================================================
@@ -1773,7 +1954,7 @@ async def _run_generation(
         imgs_for_gen = transparent_images[:2] if transparent_images else [img.convert("RGBA") for img in pil_images[:2]]
 
         # --- [2a] Packshoty indywidualne (Pillow, $0) ---
-        await _send_event(queue, "progress", {"step": 3, "total": 12, "message": "Tworzenie packshotow (Pillow)..."})
+        await _send_event(queue, "progress", {"step": 3, "total": 12, "message": "Tworzenie packshotów (Pillow)..."})
 
         packshot_gen = PillowPackshotGenerator()
         for i, t_img in enumerate(transparent_images):
@@ -1791,13 +1972,14 @@ async def _run_generation(
                 await _send_event(queue, "image", {
                     "key": key,
                     "url": f"/api/images/{job_id}/{key}",
-                    "name": f"Packshot {i+1}",
+                    "label": f"Packshot {i+1}",
+                    "type": "packshot",
                 })
 
         # --- [2b] Kompozyty zestawu (Gemini Flash) ---
-        await _send_event(queue, "progress", {"step": 4, "total": 12, "message": "Generowanie kompozytow zestawu..."})
+        await _send_event(queue, "progress", {"step": 4, "total": 12, "message": "Generowanie kompozytów zestawu..."})
 
-        # Buduj liste produktow z Product DNA
+        # Buduj listę produktów z Product DNA
         dna_dict = session.product_dna or {}
         composite_products = []
         if dna_dict.get("nazwa"):
@@ -1835,13 +2017,18 @@ async def _run_generation(
             await _send_event(queue, "image", {
                 "key": key,
                 "url": f"/api/images/{job_id}/{key}",
-                "name": f"Kompozyt zestawu ({comp_model})",
+                "label": f"Kompozyt zestawu ({comp_model})",
+                "type": "composite",
+            })
+            await _send_event(queue, "cost_update", {
+                "total": round(session.total_cost_usd, 4),
+                "per_model": session.model_costs,
             })
         else:
-            await _send_event(queue, "warning", {"message": "Kompozyt zestawu: wszystkie generatory zawiodly."})
+            await _send_event(queue, "warning", {"message": "Kompozyt zestawu: wszystkie generatory zawiodły."})
 
         if _check_cancel():
-            await _send_event(queue, "cancelled", {"message": "Anulowano przez uzytkownika"})
+            await _send_event(queue, "cancelled", {"message": "Anulowano przez użytkownika"})
             return
 
         # --- BRAMKA FAZY 1 ---
@@ -1850,15 +2037,15 @@ async def _run_generation(
         session.phase_approved = False
         session.phase_round = 0
 
-        phase1_images = {k: f"/api/images/{job_id}/{k}" for k in generated_images}
+        phase1_urls = {k: f"/api/images/{job_id}/{k}" for k in generated_images}
         await _send_event(queue, "phase1_complete", {
-            "images": phase1_images,
+            "images": _images_dict_to_list(phase1_urls),
             "images_count": len(generated_images),
             "cost_usd": session.total_cost_usd,
             "model_costs": session.model_costs,
         })
 
-        # Petla feedback Fazy 1
+        # Pętla feedback Fazy 1
         for _round in range(MAX_FEEDBACK_ROUNDS):
             try:
                 await asyncio.wait_for(session.phase_event.wait(), timeout=PHASE_TIMEOUT_SEC)
@@ -1867,6 +2054,10 @@ async def _run_generation(
                 session.current_phase = "error"
                 session.job_status = "error"
                 session.job_error = "Timeout bramki Fazy 1."
+                return
+
+            if _check_cancel():
+                await _send_event(queue, "cancelled", {"message": "Anulowano przez użytkownika"})
                 return
 
             if session.phase_approved:
@@ -1904,31 +2095,32 @@ async def _run_generation(
                 await _send_event(queue, "image", {
                     "key": key,
                     "url": f"/api/images/{job_id}/{key}",
-                    "name": f"Kompozyt zestawu v{session.phase_round} ({comp_model2})",
+                    "label": f"Kompozyt zestawu v{session.phase_round} ({comp_model2})",
+                    "type": "composite",
                 })
 
-            phase1_images = {k: f"/api/images/{job_id}/{k}" for k in generated_images}
+            phase1_regen_urls = {k: f"/api/images/{job_id}/{k}" for k in generated_images}
             await _send_event(queue, "phase1_complete", {
-                "images": phase1_images,
+                "images": _images_dict_to_list(phase1_regen_urls),
                 "images_count": len(generated_images),
                 "round": session.phase_round,
                 "cost_usd": session.total_cost_usd,
             })
 
-            # Reset event na kolejna runde
+            # Reset event na kolejną rundę
             session.phase_event.clear()
 
         if not session.phase_approved:
             # Limit rund wyczerpany, kontynuuj z aktualnym stanem
             await _send_event(queue, "warning", {
-                "message": f"Wyczerpano limit rund ({MAX_FEEDBACK_ROUNDS}). Kontynuuje z aktualnymi packshotami.",
+                "message": f"Wyczerpano limit rund ({MAX_FEEDBACK_ROUNDS}). Kontynuuję z aktualnymi packshotami.",
             })
 
         # Zapisz approved packshots
         session.approved_packshots = dict(generated_images)
 
         if _check_cancel():
-            await _send_event(queue, "cancelled", {"message": "Anulowano przez uzytkownika"})
+            await _send_event(queue, "cancelled", {"message": "Anulowano przez użytkownika"})
             return
 
         # =====================================================================
@@ -1940,7 +2132,7 @@ async def _run_generation(
 
         for scene_idx, scene_config in enumerate(lifestyle_scenes):
             if _check_cancel():
-                await _send_event(queue, "cancelled", {"message": "Anulowano przez uzytkownika"})
+                await _send_event(queue, "cancelled", {"message": "Anulowano przez użytkownika"})
                 return
 
             step_num = 5 + scene_idx
@@ -1963,9 +2155,9 @@ async def _run_generation(
                         lifestyle_generators, prompt, imgs_for_gen,
                     )
                     session.api_calls_count += 1
-                    session.image_gen_count += 1
 
                     if gen_img:
+                        session.image_gen_count += 1
                         _track_cost(session, gen_model, gen_cost)
                     else:
                         await _send_event(queue, "warning", {"message": f"{scene_name}: brak obrazu."})
@@ -2004,11 +2196,11 @@ async def _run_generation(
                         await asyncio.sleep(RATE_LIMIT_SEC)
 
                 except Exception as e:
-                    logger.error(f"[{session.job_id}] Lifestyle failed: {scene_name} - {str(e)[:200]}", exc_info=True)
+                    logger.error("[%s] Lifestyle failed: %s - %.200s", session.job_id, scene_name, e, exc_info=True)
                     await _send_event(queue, "warning", {"message": f"{scene_name}: {get_user_error(e)}"})
                     break
 
-            # Zapisz najlepsze zdjecie
+            # Zapisz najlepsze zdjęcie
             if best_img:
                 key = f"lifestyle_{scene_idx+1}_{timestamp}"
                 img_path = job_dir / f"{key}.png"
@@ -2018,7 +2210,12 @@ async def _run_generation(
                 await _send_event(queue, "image", {
                     "key": key,
                     "url": f"/api/images/{job_id}/{key}",
-                    "name": f"{scene_name} (score: {best_score}/10, {best_model})",
+                    "label": f"{scene_name} (score: {best_score}/10, {best_model})",
+                    "type": "lifestyle",
+                })
+                await _send_event(queue, "cost_update", {
+                    "total": round(session.total_cost_usd, 4),
+                    "per_model": session.model_costs,
                 })
 
             await asyncio.sleep(RATE_LIMIT_SEC)
@@ -2031,13 +2228,13 @@ async def _run_generation(
 
         all_images_urls = {k: f"/api/images/{job_id}/{k}" for k in generated_images}
         await _send_event(queue, "phase2_complete", {
-            "images": all_images_urls,
+            "images": _images_dict_to_list(all_images_urls),
             "images_count": len(generated_images),
             "cost_usd": session.total_cost_usd,
             "model_costs": session.model_costs,
         })
 
-        # Petla feedback Fazy 2 (regeneracja konkretnych scen)
+        # Pętla feedback Fazy 2 (regeneracja konkretnych scen)
         for _round in range(MAX_FEEDBACK_ROUNDS):
             try:
                 await asyncio.wait_for(session.phase_event.wait(), timeout=PHASE_TIMEOUT_SEC)
@@ -2046,6 +2243,10 @@ async def _run_generation(
                 session.current_phase = "error"
                 session.job_status = "error"
                 session.job_error = "Timeout bramki Fazy 2."
+                return
+
+            if _check_cancel():
+                await _send_event(queue, "cancelled", {"message": "Anulowano przez użytkownika"})
                 return
 
             if session.phase_approved:
@@ -2058,14 +2259,24 @@ async def _run_generation(
                     "max_rounds": MAX_FEEDBACK_ROUNDS,
                 })
 
-            # Regeneruj najslabsza scene z feedback
+            # Regeneruj najsłabszą scenę z feedback
             await _send_event(queue, "progress", {
                 "step": 10, "total": 12,
                 "message": f"Regeneracja lifestyle (runda {session.phase_round})...",
             })
 
-            # Regeneruj scene 0 (lub parse feedback w przyszlosci)
-            regen_scene = lifestyle_scenes[0]
+            # Wybierz scenę do regeneracji z feedbacku (szukaj numeru sceny)
+            regen_scene_idx = 0
+            feedback_lower = session.phase_feedback.lower()
+            for si, sc in enumerate(lifestyle_scenes):
+                scene_label = sc.get("name", "").lower()
+                if scene_label and scene_label in feedback_lower:
+                    regen_scene_idx = si
+                    break
+                if f"scen{si+1}" in feedback_lower or f"zdj{si+1}" in feedback_lower or f"#{si+1}" in feedback_lower:
+                    regen_scene_idx = si
+                    break
+            regen_scene = lifestyle_scenes[regen_scene_idx]
             regen_prompt = get_lifestyle_prompt_v2(regen_scene, product_dna_json, corrections=session.phase_feedback)
             regen_img, regen_model, regen_cost = await generate_with_fallback(
                 lifestyle_generators, regen_prompt, imgs_for_gen,
@@ -2083,12 +2294,13 @@ async def _run_generation(
                 await _send_event(queue, "image", {
                     "key": key,
                     "url": f"/api/images/{job_id}/{key}",
-                    "name": f"Lifestyle regen v{session.phase_round} ({regen_model})",
+                    "label": f"Lifestyle regen v{session.phase_round} ({regen_model})",
+                    "type": "lifestyle",
                 })
 
-            all_images_urls = {k: f"/api/images/{job_id}/{k}" for k in generated_images}
+            all_regen_urls = {k: f"/api/images/{job_id}/{k}" for k in generated_images}
             await _send_event(queue, "phase2_complete", {
-                "images": all_images_urls,
+                "images": _images_dict_to_list(all_regen_urls),
                 "images_count": len(generated_images),
                 "round": session.phase_round,
                 "cost_usd": session.total_cost_usd,
@@ -2098,8 +2310,12 @@ async def _run_generation(
 
         if not session.phase_approved:
             await _send_event(queue, "warning", {
-                "message": f"Wyczerpano limit rund ({MAX_FEEDBACK_ROUNDS}). Kontynuuje do opisu.",
+                "message": f"Wyczerpano limit rund ({MAX_FEEDBACK_ROUNDS}). Kontynuuję do opisu.",
             })
+
+        if _check_cancel():
+            await _send_event(queue, "cancelled", {"message": "Anulowano przez użytkownika"})
+            return
 
         # =====================================================================
         # FINALIZACJA: Opis B2C
@@ -2108,7 +2324,7 @@ async def _run_generation(
         await _send_event(queue, "progress", {
             "step": 11,
             "total": 12,
-            "message": "Generuje opis Allegro...",
+            "message": "Generuję opis Allegro...",
         })
 
         desc_text = ""
@@ -2134,10 +2350,10 @@ async def _run_generation(
                 _track_cost(session, "gemini-text", COST_GEMINI_TEXT_USD)
             else:
                 await _send_event(queue, "warning", {
-                    "message": "Opis zablokowany przez filtr bezpieczenstwa.",
+                    "message": "Opis zablokowany przez filtr bezpieczeństwa.",
                 })
         except Exception as e:
-            logger.error(f"[{session.job_id}] Description failed: {str(e)[:200]}", exc_info=True)
+            logger.error("[%s] Description failed: %.200s", session.job_id, e, exc_info=True)
             await _send_event(queue, "warning", {
                 "message": f"Opis: {get_user_error(e)}",
             })
@@ -2219,23 +2435,44 @@ async def _run_generation(
         gen_count = len([k for k in generated_images if not k.startswith("original_")])
         images_urls = {k: f"/api/images/{job_id}/{k}" for k in generated_images}
 
+        # Mapuj sekcje na format frontend (polskie klucze -> angielskie)
+        mapped_sections = {
+            "title": sections.get("tytul", ""),
+            "description": sections.get("opis", ""),
+            "features": sections.get("parametry_dict", {}),
+            "category": kategoria or catalog_key,
+        }
+
         session.current_phase = "done"
         session.job_status = "done"
+        pipeline_elapsed = round(time.monotonic() - pipeline_start, 1)
+        session.pipeline_elapsed_sec = pipeline_elapsed
+        logger.info(
+            "[%s] Pipeline DONE: %d grafik, koszt $%.4f, czas %.1fs",
+            job_id, gen_count, session.total_cost_usd, pipeline_elapsed,
+        )
         await _send_event(queue, "complete", {
             "images_count": gen_count,
             "has_description": bool(desc_text),
-            "sections": sections,
-            "images": images_urls,
+            "sections": mapped_sections,
+            "images": _images_dict_to_list(images_urls),
+            "description_html": desc_text,
             "timestamp": timestamp,
-            "cost_pln": round(_session_cost_pln(session), 2),
-            "cost_usd": session.total_cost_usd,
-            "model_costs": session.model_costs,
+            "elapsed_sec": pipeline_elapsed,
+            "costs": {
+                "total": round(session.total_cost_usd, 4),
+                "per_model": session.model_costs,
+            },
             "banned_phrases": banned_found,
             "extraction": {k: v for k, v in extracted.items() if v is not None},
         })
 
     except Exception as e:
-        logger.error(f"[{session.job_id}] Generation failed: {type(e).__name__}: {str(e)[:200]}", exc_info=True)
+        pipeline_elapsed = round(time.monotonic() - pipeline_start, 1)
+        logger.error(
+            "[%s] Pipeline FAILED po %.1fs: %s: %.200s",
+            session.job_id, pipeline_elapsed, type(e).__name__, e, exc_info=True,
+        )
         session.current_phase = "error"
         session.job_status = "error"
         session.job_error = get_user_error(e)
@@ -2253,31 +2490,13 @@ async def _run_generation(
                 _img.close()
             except Exception:
                 pass
-        # Signal koniec streamu
+        # Sygnał koniec streamu
         if queue is not None:
             await queue.put(None)
 
 
 # ---------------------------------------------------------------------------
-# Startup Validation
-# ---------------------------------------------------------------------------
-
-
-@app.on_event("startup")
-async def startup_validation():
-    """Weryfikacja kluczy API przy starcie serwera."""
-    logger.info("=== Startup Validation ===")
-    logger.info(f"GEMINI_API_KEY: {'configured' if GEMINI_API_KEY else 'MISSING'}")
-    logger.info(f"FAL_AI_API_KEY: {'configured' if FAL_AI_API_KEY else 'MISSING'}")
-    logger.info(f"OPENAI_API_KEY: {'configured' if OPENAI_API_KEY else 'MISSING'}")
-    logger.info(f"REMBG_MODEL: {REMBG_MODEL}")
-    logger.info(f"CORS_ORIGINS: {CORS_ORIGINS}")
-    if not APP_PASSWORD:
-        logger.critical("APP_PASSWORD not set! Auth will be required.")
-
-
-# ---------------------------------------------------------------------------
-# Static files (MUSI byc OSTATNIE - catch-all)
+# Static files (MUSI być OSTATNIE - catch-all)
 # ---------------------------------------------------------------------------
 
 # React frontend (Vite build) pod /app/
@@ -2285,5 +2504,7 @@ _frontend_dist = Path(__file__).parent / "frontend" / "dist"
 if _frontend_dist.is_dir():
     app.mount("/app", StaticFiles(directory=str(_frontend_dist), html=True), name="react-app")
 
-# Legacy static UI (catch-all, musi byc po /app)
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+# Legacy static UI (catch-all, musi być po /app)
+_legacy_static = Path(__file__).parent / "static"
+if _legacy_static.is_dir():
+    app.mount("/", StaticFiles(directory=str(_legacy_static), html=True), name="static")

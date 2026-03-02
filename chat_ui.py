@@ -1,7 +1,7 @@
 """
-Chat UI do edycji grafik i opisow aukcji.
+Chat UI do edycji grafik i opisów aukcji.
 
-render_image_chat: chat pod grafika do edycji instrukcjami naturalnymi.
+render_image_chat: chat pod grafiką do edycji instrukcjami naturalnymi.
 render_desc_chat: chat pod opisem Allegro do edycji instrukcjami.
 """
 
@@ -30,7 +30,7 @@ from prompts import get_regen_prompt, get_description_revision_prompt, check_ban
 
 
 # ---------------------------------------------------------------------------
-# Stale
+# Stałe
 # ---------------------------------------------------------------------------
 
 MAX_API_CALLS_PER_SESSION = 30
@@ -38,9 +38,9 @@ MAX_CHAT_MESSAGES = 10
 
 
 def _check_api_limit() -> bool:
-    """Sprawdza czy nie przekroczono limitu API. Zwraca True jesli OK."""
+    """Sprawdza czy nie przekroczono limitu API. Zwraca True jeśli OK."""
     if st.session_state.get("api_calls_count", 0) >= MAX_API_CALLS_PER_SESSION:
-        st.error(f"Limit {MAX_API_CALLS_PER_SESSION} wywolan API w tej sesji.")
+        st.error(f"Limit {MAX_API_CALLS_PER_SESSION} wywołań API w tej sesji.")
         return False
     return True
 
@@ -58,18 +58,18 @@ def _get_client():
 # ---------------------------------------------------------------------------
 
 def render_image_chat(image_key: str, current_prompt: str, all_results: dict, timestamp: str):
-    """Renderuje chat pod grafika do edycji instrukcjami naturalnymi.
+    """Renderuje chat pod grafiką do edycji instrukcjami naturalnymi.
 
     Args:
         image_key: klucz grafiki w all_results
-        current_prompt: prompt uzyty do wygenerowania grafiki
+        current_prompt: prompt użyty do wygenerowania grafiki
         all_results: dict z wszystkimi wynikami (PIL.Image)
         timestamp: timestamp generowania
     """
     if image_key not in all_results:
         return
 
-    # Pomijaj oryginaly
+    # Pomijaj oryginały
     if image_key.startswith("zdjecie_oryginalne_"):
         return
 
@@ -79,7 +79,7 @@ def render_image_chat(image_key: str, current_prompt: str, all_results: dict, ti
 
     history = st.session_state[chat_key]
 
-    with st.expander("Edytuj te grafike", expanded=False):
+    with st.expander("Edytuj tę grafikę", expanded=False):
         # Historia zmian
         if history:
             for msg in history:
@@ -98,12 +98,12 @@ def render_image_chat(image_key: str, current_prompt: str, all_results: dict, ti
         with col_input:
             instruction = st.text_input(
                 "Instrukcja",
-                placeholder="np. 'zmien kolor baterii na zloty'",
+                placeholder="np. 'zmień kolor baterii na złoty'",
                 key=f"img_chat_input_{image_key}",
                 label_visibility="collapsed",
             )
         with col_btn:
-            send = st.button("Wyslij", key=f"img_chat_send_{image_key}", use_container_width=True)
+            send = st.button("Wyślij", key=f"img_chat_send_{image_key}", use_container_width=True)
 
         if send and instruction.strip():
             if not _check_api_limit():
@@ -114,10 +114,10 @@ def render_image_chat(image_key: str, current_prompt: str, all_results: dict, ti
                 st.error("Brak klucza API lub SDK google-genai.")
                 return
 
-            # Dodaj wiadomosc uzytkownika
+            # Dodaj wiadomość użytkownika
             history.append({"role": "user", "text": instruction.strip(), "ts": datetime.now().isoformat()})
 
-            with st.spinner("Edytuje grafike..."):
+            with st.spinner("Edytuję grafikę..."):
                 try:
                     edit_prompt = get_regen_prompt("edit", instruction.strip())
                     current_img = all_results[image_key]
@@ -127,7 +127,7 @@ def render_image_chat(image_key: str, current_prompt: str, all_results: dict, ti
                         image_config=types.ImageConfig(imageSize="2K"),
                     )
 
-                    # Dodaj zdjecia zrodlowe jesli dostepne
+                    # Dodaj zdjęcia źródłowe jeśli dostępne
                     images_input = [current_img]
                     source_imgs = st.session_state.get("source_images", [])
                     if source_imgs:
@@ -157,18 +157,18 @@ def render_image_chat(image_key: str, current_prompt: str, all_results: dict, ti
                     if new_img:
                         all_results[image_key] = new_img
                         st.session_state["last_results"] = all_results
-                        history.append({"role": "system", "text": "Gotowe. Zaktualizowalem grafike.", "ts": datetime.now().isoformat()})
+                        history.append({"role": "system", "text": "Gotowe. Zaktualizowałem grafikę.", "ts": datetime.now().isoformat()})
                         st.session_state[chat_key] = history
                         st.rerun()
                     else:
-                        history.append({"role": "system", "text": "Nie udalo sie wygenerowac. Sprobuj inaczej.", "ts": datetime.now().isoformat()})
+                        history.append({"role": "system", "text": "Nie udało się wygenerować. Spróbuj inaczej.", "ts": datetime.now().isoformat()})
                         st.session_state[chat_key] = history
 
                 except Exception as e:
                     error_msg = str(e)[:150]
-                    history.append({"role": "system", "text": f"Blad: {error_msg}", "ts": datetime.now().isoformat()})
+                    history.append({"role": "system", "text": f"Błąd: {error_msg}", "ts": datetime.now().isoformat()})
                     st.session_state[chat_key] = history
-                    st.error(f"Blad API: {error_msg}")
+                    st.error(f"Błąd API: {error_msg}")
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +192,7 @@ def render_desc_chat(desc_text: str, session_key: str = "desc_chat"):
     if chat_key not in st.session_state:
         st.session_state[chat_key] = []
 
-    # Inicjalizacja revisions (kompatybilnosc z istniejacym kodem)
+    # Inicjalizacja revisions (kompatybilność z istniejącym kodem)
     if "description_revisions" not in st.session_state:
         st.session_state["description_revisions"] = []
 
@@ -210,13 +210,13 @@ def render_desc_chat(desc_text: str, session_key: str = "desc_chat"):
         key=f"{session_key}_editable",
     )
 
-    # Zapisz reczna edycje
+    # Zapisz ręczną edycję
     if edited_desc != current_html:
         col_save, col_reset = st.columns(2)
         with col_save:
             if st.button("Zapisz zmiany", key=f"{session_key}_save_manual"):
                 st.session_state["description_revisions"].append({
-                    "instruction": "(edycja reczna)",
+                    "instruction": "(edycja ręczna)",
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "previous_html": current_html,
                 })
@@ -236,14 +236,14 @@ def render_desc_chat(desc_text: str, session_key: str = "desc_chat"):
     with col_input:
         instruction = st.text_input(
             "Instrukcja edycji",
-            placeholder="np. 'skroc o 20%', 'dodaj emotikony', 'zmien naglowek'",
+            placeholder="np. 'skróć o 20%', 'dodaj emotikony', 'zmień nagłówek'",
             key=f"{session_key}_instruction",
         )
     with col_actions:
         st.caption(f"Poprawka {current_count + 1}/{MAX_REVISIONS}")
         revise_btn = st.button("Popraw opis", key=f"{session_key}_revise", use_container_width=True)
         if current_count > 0:
-            undo_btn = st.button("Cofnij ostatnia", key=f"{session_key}_undo", use_container_width=True)
+            undo_btn = st.button("Cofnij ostatnią", key=f"{session_key}_undo", use_container_width=True)
         else:
             undo_btn = False
 
@@ -258,7 +258,7 @@ def render_desc_chat(desc_text: str, session_key: str = "desc_chat"):
                 else:
                     st.markdown(f"**AI:** {text}")
 
-    # Obsluga poprawki AI
+    # Obsługa poprawki AI
     if revise_btn and instruction.strip():
         if not _check_api_limit():
             return
@@ -268,7 +268,7 @@ def render_desc_chat(desc_text: str, session_key: str = "desc_chat"):
             st.error("Brak klucza API lub SDK google-genai.")
             return
 
-        # Uzyj aktualnego opisu (moze byc reczne edytowany)
+        # Użyj aktualnego opisu (może być ręcznie edytowany)
         active_html = edited_desc if edited_desc else current_html
 
         history.append({"role": "user", "text": instruction.strip()})
@@ -285,7 +285,7 @@ def render_desc_chat(desc_text: str, session_key: str = "desc_chat"):
                 st.session_state["text_gen_count"] = st.session_state.get("text_gen_count", 0) + 1
 
                 if not response.parts:
-                    history.append({"role": "system", "text": "AI nie wygenerowalo odpowiedzi."})
+                    history.append({"role": "system", "text": "AI nie wygenerowało odpowiedzi."})
                     st.session_state[chat_key] = history
                     return
 
@@ -296,7 +296,7 @@ def render_desc_chat(desc_text: str, session_key: str = "desc_chat"):
                 new_desc = new_desc.strip()
 
                 if "<h2" not in new_desc.lower() and "<p" not in new_desc.lower():
-                    history.append({"role": "system", "text": "AI nie zwrocilo poprawnego HTML."})
+                    history.append({"role": "system", "text": "AI nie zwróciło poprawnego HTML."})
                     st.session_state[chat_key] = history
                     return
 
@@ -322,9 +322,9 @@ def render_desc_chat(desc_text: str, session_key: str = "desc_chat"):
 
             except Exception as e:
                 error_msg = str(e)[:150]
-                history.append({"role": "system", "text": f"Blad: {error_msg}"})
+                history.append({"role": "system", "text": f"Błąd: {error_msg}"})
                 st.session_state[chat_key] = history
-                st.error(f"Blad API: {error_msg}")
+                st.error(f"Błąd API: {error_msg}")
 
     # Cofniecie
     if undo_btn and st.session_state["description_revisions"]:
@@ -332,7 +332,7 @@ def render_desc_chat(desc_text: str, session_key: str = "desc_chat"):
         st.session_state["last_sections"]["opis"] = last["previous_html"]
         st.session_state["last_desc_raw"] = last["previous_html"]
         if history:
-            # Usun ostatnia pare user+system
+            # Usuń ostatnią parę user+system
             while history and history[-1].get("role") == "system":
                 history.pop()
             if history and history[-1].get("role") == "user":

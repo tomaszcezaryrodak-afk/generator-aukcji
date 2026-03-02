@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Test generatorow obrazow (nie-LoRA).
+Test generatorów obrazów (nie-LoRA).
 Sprawdza: API connectivity, generowanie, normalize_output, zapis.
-Uzycie: .venv/bin/python3 test_generators.py [--model MODEL_NAME]
+Użycie: .venv/bin/python3 test_generators.py [--model MODEL_NAME]
 """
 import asyncio
 import logging
@@ -61,13 +61,13 @@ COMPOSITE_PROMPT = (
 
 
 def load_test_image() -> PIL.Image.Image:
-    """Laduje testowy obraz produktu."""
+    """Ładuje testowy obraz produktu."""
     path = Path(TEST_IMAGE_PATH)
     if not path.exists():
         raise FileNotFoundError(f"Brak obrazu testowego: {path}")
     img = PIL.Image.open(path)
     img.load()
-    logger.info(f"Zaladowano obraz testowy: {path} ({img.size}, {img.mode})")
+    logger.info(f"Załadowano obraz testowy: {path} ({img.size}, {img.mode})")
     return img
 
 

@@ -78,11 +78,11 @@ class LoRATrainer:
 
         if len(images) < LORA_MIN_IMAGES:
             raise ValueError(
-                f"Za malo obrazow: {len(images)} (minimum {LORA_MIN_IMAGES})"
+                f"Za mało obrazów: {len(images)} (minimum {LORA_MIN_IMAGES})"
             )
         if len(images) > LORA_MAX_IMAGES:
             raise ValueError(
-                f"Za duzo obrazow: {len(images)} (maximum {LORA_MAX_IMAGES})"
+                f"Za dużo obrazów: {len(images)} (maximum {LORA_MAX_IMAGES})"
             )
 
         zip_buffer = io.BytesIO()
@@ -93,12 +93,12 @@ class LoRATrainer:
 
         size_mb = len(zip_buffer.getvalue()) / (1024 * 1024)
         logger.info(
-            f"Przygotowano dataset: {len(images)} obrazow, {size_mb:.1f} MB"
+            f"Przygotowano dataset: {len(images)} obrazów, {size_mb:.1f} MB"
         )
 
         client = self._get_client()
 
-        # upload_file() z pliku na dysku - stabilny dla duzych plikow.
+        # upload_file() z pliku na dysku - stabilny dla dużych plików.
         # client.upload(bytes) zawodzi przy multipart >100MB (HTTP 500 na chunkach).
         with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
             tmp.write(zip_buffer.getvalue())
@@ -118,7 +118,7 @@ class LoRATrainer:
         client = self._get_client()
 
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None,
                 lambda: client.subscribe(
@@ -133,13 +133,13 @@ class LoRATrainer:
                 ),
             )
         except Exception as e:
-            logger.error(f"Blad treningu LoRA: {e}")
+            logger.error(f"Błąd treningu LoRA: {e}")
             raise
 
         lora_url = ""
         if isinstance(result, dict):
             lora_url = result.get("diffusers_lora_file", {}).get("url", "")
-        logger.info(f"Trening zakonczony. LoRA URL: {lora_url}")
+        logger.info(f"Trening zakończony. LoRA URL: {lora_url}")
         return result
 
     async def validate(
@@ -156,7 +156,7 @@ class LoRATrainer:
 
         test_images_lora = []
         test_images_base = []
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         http = httpx.Client(timeout=30)
 
         for i, prompt in enumerate(prompts):
@@ -182,8 +182,8 @@ class LoRATrainer:
                 test_images_lora.append(str(lora_path))
                 logger.info(f"Test LoRA {i}: zapisano {lora_path}")
             except Exception as e:
-                logger.error(f"Blad generowania z LoRA (prompt {i}): {e}")
-                test_images_lora.append(f"BLAD: {e}")
+                logger.error(f"Błąd generowania z LoRA (prompt {i}): {e}")
+                test_images_lora.append(f"BŁĄD: {e}")
 
             # Bez LoRA (baseline)
             try:
@@ -206,8 +206,8 @@ class LoRATrainer:
                 test_images_base.append(str(base_path))
                 logger.info(f"Test base {i}: zapisano {base_path}")
             except Exception as e:
-                logger.error(f"Blad generowania baseline (prompt {i}): {e}")
-                test_images_base.append(f"BLAD: {e}")
+                logger.error(f"Błąd generowania baseline (prompt {i}): {e}")
+                test_images_base.append(f"BŁĄD: {e}")
 
         http.close()
 
@@ -217,7 +217,7 @@ class LoRATrainer:
             "test_count": len(prompts),
             "test_images_lora": test_images_lora,
             "test_images_base": test_images_base,
-            "notes": "Quality gate wymaga manualnej weryfikacji. Sprawdz obrazy w test_results/.",
+            "notes": "Quality gate wymaga manualnej weryfikacji. Sprawdź obrazy w test_results/.",
             "timestamp": datetime.now().isoformat(),
         }
 
@@ -263,7 +263,7 @@ class LoRATrainer:
             v["id"] == version for v in registry.get("versions", [])
         )
         if not version_exists:
-            logger.error(f"Wersja {version} nie istnieje w rejestrze")
+            logger.error(f"Wersja {version} nie istnieje w rejestrze LoRA")
             return False
 
         registry["active"] = version
@@ -288,16 +288,16 @@ class LoRATrainer:
         return None
 
     def _load_registry(self) -> dict:
-        """Laduje rejestr z pliku JSON."""
+        """Ładuje rejestr z pliku JSON."""
         if self._registry_path.exists():
-            with open(self._registry_path, "r") as f:
+            with open(self._registry_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         return {"versions": [], "active": None}
 
     def _save_registry(self, registry: dict) -> None:
         """Zapisuje rejestr do pliku JSON."""
         self._registry_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self._registry_path, "w") as f:
+        with open(self._registry_path, "w", encoding="utf-8") as f:
             json.dump(registry, f, indent=2, ensure_ascii=False)
 
 
@@ -305,10 +305,10 @@ async def quick_train(image_dir: str = "training", steps: int = 1000) -> dict:
     """Szybki helper: prepare + train + validate + save. One-liner."""
     trainer = LoRATrainer(LoRAConfig(steps=steps))
 
-    logger.info(f"Przygotowywanie datasetu z {image_dir}...")
+    logger.info(f"Przygotowanie datasetu z {image_dir}...")
     dataset_url = trainer.prepare_dataset(Path(image_dir))
 
-    logger.info(f"Rozpoczynam trening ({steps} krokow, ~${steps * 0.008:.2f})...")
+    logger.info(f"Rozpoczynam trening ({steps} kroków, ~${steps * 0.008:.2f})...")
     result = await trainer.train(dataset_url)
 
     lora_url = ""
@@ -317,7 +317,7 @@ async def quick_train(image_dir: str = "training", steps: int = 1000) -> dict:
     if not lora_url:
         raise ValueError("Trening nie zwrocil URL do LoRA")
 
-    logger.info("Uruchamiam quality gate...")
+    logger.info("Walidacja jakości (quality gate)...")
     validation = await trainer.validate(lora_url)
 
     version = await trainer.save_version(

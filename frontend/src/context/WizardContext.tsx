@@ -1,5 +1,78 @@
-import { createContext, useContext, useReducer, type ReactNode } from 'react';
+import { createContext, useContext, useReducer, useEffect, useRef, useCallback, type ReactNode } from 'react';
+import { toast } from 'sonner';
 import type { WizardState, WizardAction, WizardStep } from '@/lib/types';
+
+// Session persistence — saves analysis results so page refresh doesn't lose progress
+const SESSION_KEY = 'gz_wizard_state';
+
+interface PersistedState {
+  step: WizardStep;
+  specText: string;
+  sessionId: string | null;
+  suggestedCategory: string;
+  suggestedColors: Record<string, string>;
+  suggestedFeatures: Array<{ key: string; value: string }>;
+  confirmedColors: Record<string, string>;
+  confirmedFeatures: Array<{ key: string; value: string }>;
+  mainImageIndex: number;
+  productDNA: Record<string, unknown> | null;
+}
+
+function saveToSession(state: WizardState) {
+  // Only persist pre-generation steps (1-4). Steps 5-6 depend on server state.
+  if (state.step >= 5) return;
+  // Don't persist if no meaningful data yet
+  if (state.step === 1 && state.images.length === 0 && !state.specText) return;
+
+  const persisted: PersistedState = {
+    step: state.step,
+    specText: state.specText,
+    sessionId: state.sessionId,
+    suggestedCategory: state.suggestedCategory,
+    suggestedColors: state.suggestedColors,
+    suggestedFeatures: state.suggestedFeatures,
+    confirmedColors: state.confirmedColors,
+    confirmedFeatures: state.confirmedFeatures,
+    mainImageIndex: state.mainImageIndex,
+    productDNA: state.productDNA,
+  };
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(persisted));
+  } catch {
+    // quota exceeded — ignore
+  }
+}
+
+function loadFromSession(): Partial<WizardState> | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as PersistedState;
+    // Only restore if analysis was completed (has category)
+    if (!data.suggestedCategory) return null;
+    // Restore to original step, capped at 4 (steps 5-6 depend on server state).
+    // Step 1 requires images (File objects can't be persisted) — skip to 2+ if analysis done.
+    const restoredStep = Math.max(2, Math.min(data.step || 2, 4)) as WizardStep;
+    return {
+      step: restoredStep,
+      specText: data.specText,
+      sessionId: data.sessionId || null,
+      suggestedCategory: data.suggestedCategory,
+      suggestedColors: data.suggestedColors,
+      suggestedFeatures: data.suggestedFeatures,
+      confirmedColors: data.confirmedColors,
+      confirmedFeatures: data.confirmedFeatures,
+      mainImageIndex: 0,
+      productDNA: data.productDNA || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function clearSession() {
+  sessionStorage.removeItem(SESSION_KEY);
+}
 
 const initialState: WizardState = {
   step: 1,
@@ -29,6 +102,8 @@ const initialState: WizardState = {
   chatMessages: [],
   totalCost: 0,
   modelCosts: {},
+  elapsedSeconds: 0,
+  generatedAt: '',
   error: null,
 };
 
@@ -65,7 +140,20 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
     case 'SET_JOB_ID':
       return { ...state, jobId: action.jobId };
     case 'SET_GENERATING':
-      return { ...state, isGenerating: action.isGenerating };
+      // Clear generation artifacts when starting new generation
+      if (action.isGenerating) {
+        return {
+          ...state,
+          isGenerating: true,
+          liveImages: [],
+          selfChecks: [],
+          phaseImages: [],
+          phaseRound: 0,
+          phaseFeedback: '',
+          error: null,
+        };
+      }
+      return { ...state, isGenerating: false };
     case 'SET_PROGRESS':
       return { ...state, progress: action.progress };
     case 'ADD_LIVE_IMAGE':
@@ -103,9 +191,16 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
       };
     case 'SET_COST':
       return { ...state, totalCost: action.total, modelCosts: action.perModel };
+    case 'SET_ELAPSED':
+      return { ...state, elapsedSeconds: action.seconds, generatedAt: action.timestamp };
     case 'SET_ERROR':
       return { ...state, error: action.error };
+    case 'CLEAR_CHAT':
+      return { ...state, chatMessages: [] };
     case 'RESET':
+      // NOTE: Caller is responsible for calling URL.revokeObjectURL on image previews
+      // before dispatching RESET (see NewAuctionButton in Step6Results).
+      clearSession();
       return initialState;
     default:
       return state;
@@ -123,12 +218,34 @@ interface WizardContextValue {
 const WizardContext = createContext<WizardContextValue | null>(null);
 
 export function WizardProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(wizardReducer, initialState);
+  const restoredRef = useRef(false);
+  const [state, dispatch] = useReducer(wizardReducer, initialState, (init) => {
+    const restored = loadFromSession();
+    if (restored) {
+      restoredRef.current = true;
+      return { ...init, ...restored };
+    }
+    return init;
+  });
 
-  const canProceed = () => {
+  // Notify user about restored session (once)
+  useEffect(() => {
+    if (restoredRef.current) {
+      restoredRef.current = false;
+      toast.info('Przywrócono dane z poprzedniej sesji. Możesz kontynuować od ostatniego kroku.', { id: 'session-restored' });
+    }
+  }, []);
+
+  // Persist meaningful state changes to sessionStorage - deps intentionally limited to specific fields
+  useEffect(() => {
+    saveToSession(state);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.step, state.specText, state.sessionId, state.suggestedCategory, state.confirmedColors, state.confirmedFeatures, state.productDNA]);
+
+  const canProceed = useCallback(() => {
     switch (state.step) {
       case 1:
-        return state.images.length > 0;
+        return state.images.length > 0 && state.specText.trim().length > 0;
       case 2:
         return !state.isAnalyzing && state.suggestedCategory !== '';
       case 3:
@@ -140,19 +257,19 @@ export function WizardProvider({ children }: { children: ReactNode }) {
       default:
         return false;
     }
-  };
+  }, [state.step, state.images.length, state.specText, state.isAnalyzing, state.suggestedCategory, state.confirmedColors, state.confirmedFeatures.length, state.currentPhase]);
 
-  const goNext = () => {
+  const goNext = useCallback(() => {
     if (state.step < 6 && canProceed()) {
       dispatch({ type: 'SET_STEP', step: (state.step + 1) as WizardStep });
     }
-  };
+  }, [state.step, canProceed, dispatch]);
 
-  const goPrev = () => {
+  const goPrev = useCallback(() => {
     if (state.step > 1) {
       dispatch({ type: 'SET_STEP', step: (state.step - 1) as WizardStep });
     }
-  };
+  }, [state.step, dispatch]);
 
   return (
     <WizardContext.Provider value={{ state, dispatch, canProceed, goNext, goPrev }}>
@@ -161,6 +278,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useWizard() {
   const ctx = useContext(WizardContext);
   if (!ctx) throw new Error('useWizard must be inside WizardProvider');

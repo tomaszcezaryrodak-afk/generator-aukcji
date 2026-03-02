@@ -1,6 +1,6 @@
 """
-Konfiguracja centralna Pipeline v3.0.
-Stale, modele, koszty, rozdzielczosci, safeguards.
+Konfiguracja centralna Pipeline v4.3.
+Stałe, modele, koszty, rozdzielczości, safeguards.
 """
 import os
 from dotenv import load_dotenv
@@ -8,7 +8,7 @@ load_dotenv()
 
 
 def get_secret(key, default=""):
-    """Pobiera secret ze zmiennych srodowiskowych."""
+    """Pobiera secret ze zmiennych środowiskowych."""
     return os.environ.get(key, default)
 
 
@@ -28,7 +28,7 @@ GEMINI_PRO_IMAGE_MODEL = get_secret(
     "GEMINI_PRO_IMAGE_MODEL", "gemini-3-pro-image-preview"
 )
 
-# --- Modele obrazow ---
+# --- Modele obrazów ---
 OPENAI_IMAGE_MODEL = get_secret("OPENAI_IMAGE_MODEL", "gpt-image-1.5")
 KONTEXT_MAX_MODEL = "fal-ai/flux-pro/kontext/max"
 KONTEXT_PRO_MODEL = "fal-ai/flux-pro/kontext"
@@ -67,7 +67,7 @@ COST_GEMINI_TEXT_USD = 0.02
 COST_LORA_TRAINING_PER_STEP_USD = 0.008
 USD_TO_PLN = 3.57
 
-# --- Rozdzielczosci (Allegro-optimized) ---
+# --- Rozdzielczości (Allegro-optimized) ---
 PACKSHOT_SIZE = (2000, 2000)
 LIFESTYLE_SIZE = (2000, 1500)
 COMPOSITE_SIZE = (2000, 2000)

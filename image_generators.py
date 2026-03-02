@@ -1,5 +1,5 @@
 """
-Abstrakcja generatorow obrazow - Pipeline v3.0.
+Abstrakcja generatorów obrazów - Pipeline v4.3.
 ABC + implementacje per model + normalize_output + fallback chain.
 """
 
@@ -8,6 +8,7 @@ import base64
 import io
 import logging
 import os
+import random
 import time
 from abc import ABC, abstractmethod
 
@@ -29,7 +30,7 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-# Timeout na FAL.AI subscribe (sekundy). Zapobiega wieszacym sie requestom.
+# Timeout na FAL.AI subscribe (sekundy). Zapobiega wieszającym się requestom.
 FAL_AI_CALL_TIMEOUT = 180
 
 
@@ -64,7 +65,7 @@ def normalize_output(img: PIL.Image.Image, target_size: tuple[int, int]) -> PIL.
 
 
 def _extract_image_from_gemini_response(response) -> PIL.Image.Image | None:
-    """Wyciaga PIL Image z odpowiedzi Gemini."""
+    """Wyciąga PIL Image z odpowiedzi Gemini."""
     if not response or not response.parts:
         return None
     for part in response.parts:
@@ -83,7 +84,7 @@ def _extract_image_from_gemini_response(response) -> PIL.Image.Image | None:
 # ---------------------------------------------------------------------------
 
 class ImageGenerator(ABC):
-    """Bazowy interfejs dla wszystkich generatorow obrazow."""
+    """Bazowy interfejs dla wszystkich generatorów obrazów."""
 
     @abstractmethod
     async def generate(
@@ -103,7 +104,7 @@ class ImageGenerator(ABC):
         ...
 
     async def health_check(self) -> bool:
-        """Sprawdza dostepnosc providera. Default: True."""
+        """Sprawdza dostępność providera. Default: True."""
         return True
 
     def max_reference_images(self) -> int:
@@ -116,7 +117,7 @@ class ImageGenerator(ABC):
         target_size: tuple[int, int] = LIFESTYLE_SIZE,
         max_retries: int = 3,
     ) -> PIL.Image.Image | None:
-        """Generate z exponential backoff. Retry WEWNATRZ generatora."""
+        """Generate z exponential backoff. Retry WEWNĄTRZ generatora."""
         for attempt in range(1, max_retries + 1):
             try:
                 result = await self.generate(prompt, reference_images, target_size)
@@ -124,7 +125,7 @@ class ImageGenerator(ABC):
                     return normalize_output(result, target_size)
                 if attempt < max_retries:
                     logger.warning(
-                        f"{self.name()} zwrocil None, retry {attempt}/{max_retries}"
+                        f"{self.name()} zwrócił None, retry {attempt}/{max_retries}"
                     )
                     await asyncio.sleep(2 ** attempt)
             except Exception as e:
@@ -133,7 +134,6 @@ class ImageGenerator(ABC):
                     code in err for code in ["429", "500", "503", "RESOURCE_EXHAUSTED", "TimeoutError"]
                 ) or isinstance(e, asyncio.TimeoutError)
                 if attempt < max_retries and retryable:
-                    import random
                     wait = 5 * (2 ** attempt) + random.uniform(0, 2)
                     logger.warning(
                         f"{self.name()} error retry {attempt}/{max_retries}: "
@@ -152,7 +152,7 @@ class ImageGenerator(ABC):
 
 class GeminiFlashImageGenerator(ImageGenerator):
     """Gemini 3.1 Flash Image - kompozyty zestawu + lifestyle fallback.
-    Do 10 zdjec referencyjnych, Thinking mode, native API."""
+    Do 10 zdjęć referencyjnych, Thinking mode, native API."""
 
     def __init__(self, thinking_level: str | None = "HIGH"):
         self._thinking_level = thinking_level
@@ -187,7 +187,7 @@ class GeminiFlashImageGenerator(ImageGenerator):
 
         gen_config = types.GenerateContentConfig(**config_kwargs)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
             lambda: client.models.generate_content(
@@ -216,7 +216,7 @@ class GeminiFlashImageGenerator(ImageGenerator):
 # ---------------------------------------------------------------------------
 
 class GeminiProImageGenerator(ImageGenerator):
-    """Gemini 3 Pro Image - legacy generator, zachowany dla kompatybilnosci."""
+    """Gemini 3 Pro Image - legacy generator, zachowany dla kompatybilności."""
 
     def __init__(self):
         self._client = None
@@ -245,7 +245,7 @@ class GeminiProImageGenerator(ImageGenerator):
             image_config=types.ImageConfig(imageSize="2K"),
         )
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
             lambda: client.models.generate_content(
@@ -274,7 +274,7 @@ class GeminiProImageGenerator(ImageGenerator):
 # ---------------------------------------------------------------------------
 
 class PillowPackshotGenerator(ImageGenerator):
-    """Lokalne packshoty na bialym tle z cieniem kontaktowym. Koszt $0."""
+    """Lokalne packshoty na białym tle z cieniem kontaktowym. Koszt $0."""
 
     async def generate(
         self,
@@ -344,8 +344,8 @@ class PillowPackshotGenerator(ImageGenerator):
 # Helpers: FAL.AI
 # ---------------------------------------------------------------------------
 
-def _download_image_from_url(url: str) -> PIL.Image.Image | None:
-    """Pobiera obraz z URL i zwraca PIL Image."""
+def _download_image_from_url_sync(url: str) -> PIL.Image.Image | None:
+    """Pobiera obraz z URL (synchronicznie, do wywołania w executor)."""
     try:
         import requests
         resp = requests.get(url, timeout=30)
@@ -354,8 +354,14 @@ def _download_image_from_url(url: str) -> PIL.Image.Image | None:
         img.load()
         return img
     except Exception as e:
-        logger.error(f"Blad pobierania obrazu z {url[:80]}: {e}")
+        logger.error(f"Błąd pobierania obrazu z {url[:80]}: {e}")
         return None
+
+
+async def _download_image_from_url(url: str) -> PIL.Image.Image | None:
+    """Pobiera obraz z URL bez blokowania event loop."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _download_image_from_url_sync, url)
 
 
 def _pil_to_base64_uri(img: PIL.Image.Image) -> str:
@@ -376,7 +382,7 @@ def _pil_to_base64_uri(img: PIL.Image.Image) -> str:
 
 class KontextMaxGenerator(ImageGenerator):
     """Kontext Max - image editing. Wstawia produkt (transparent PNG) w scene.
-    Zachowuje geometrie produktu 1:1. $0.08 flat."""
+    Zachowuje geometrię produktu 1:1. $0.08 flat."""
 
     def __init__(self):
         self._client = None
@@ -396,7 +402,7 @@ class KontextMaxGenerator(ImageGenerator):
         client = self._get_client()
         product_uri = _pil_to_base64_uri(reference_images[0])
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await asyncio.wait_for(
             loop.run_in_executor(
                 None,
@@ -414,7 +420,7 @@ class KontextMaxGenerator(ImageGenerator):
             timeout=FAL_AI_CALL_TIMEOUT,
         )
         url = result["images"][0]["url"]
-        return _download_image_from_url(url)
+        return await _download_image_from_url(url)
 
     def cost_per_image(self): return COST_KONTEXT_MAX_IMAGE_USD
     def name(self): return "Kontext Max"
@@ -454,7 +460,7 @@ class Flux2ProEditGenerator(ImageGenerator):
             image_urls = [_pil_to_base64_uri(img) for img in reference_images[:9]]
             arguments["image_urls"] = image_urls
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await asyncio.wait_for(
             loop.run_in_executor(
                 None,
@@ -466,7 +472,7 @@ class Flux2ProEditGenerator(ImageGenerator):
             timeout=FAL_AI_CALL_TIMEOUT,
         )
         url = result["images"][0]["url"]
-        return _download_image_from_url(url)
+        return await _download_image_from_url(url)
 
     def cost_per_image(self): return COST_FLUX_2_PRO_EDIT_IMAGE_USD
     def name(self): return "Flux 2 Pro Edit"
@@ -518,7 +524,7 @@ class KlingO3Generator(ImageGenerator):
             image_urls = [_pil_to_base64_uri(img) for img in reference_images[:10]]
             arguments["image_urls"] = image_urls
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await asyncio.wait_for(
             loop.run_in_executor(
                 None,
@@ -530,7 +536,7 @@ class KlingO3Generator(ImageGenerator):
             timeout=FAL_AI_CALL_TIMEOUT,
         )
         url = result["images"][0]["url"]
-        return _download_image_from_url(url)
+        return await _download_image_from_url(url)
 
     def cost_per_image(self): return COST_KLING_O3_IMAGE_USD
     def name(self): return "Kling Image O3"
@@ -566,7 +572,7 @@ class GPTImage15Generator(ImageGenerator):
         else:
             size = "1024x1024"
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         if reference_images:
             product_img = reference_images[0]
@@ -605,7 +611,7 @@ class GPTImage15Generator(ImageGenerator):
             img.load()
             return img
         elif hasattr(image_data, "url") and image_data.url:
-            return _download_image_from_url(image_data.url)
+            return await _download_image_from_url(image_data.url)
         logger.warning(
             f"GPT Image 1.5: brak b64_json/url w odpowiedzi. "
             f"Atrybuty: {[a for a in dir(image_data) if not a.startswith('_')]}"
@@ -623,7 +629,7 @@ class GPTImage15Generator(ImageGenerator):
 # ---------------------------------------------------------------------------
 
 class Flux2LoRAGenerator(ImageGenerator):
-    """Flux 2 LoRA - wytrenowane LoRA via FAL.AI. Max 3 LoRA jednoczesnie.
+    """Flux 2 LoRA - wytrenowane LoRA via FAL.AI. Max 3 LoRA jednocześnie.
     $0.021/MP. Multi-ref z @ syntax."""
 
     def __init__(self):
@@ -663,7 +669,7 @@ class Flux2LoRAGenerator(ImageGenerator):
             "loras": [{"path": lora_url, "scale": LORA_WEIGHT}],
         }
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await asyncio.wait_for(
             loop.run_in_executor(
                 None,
@@ -675,7 +681,7 @@ class Flux2LoRAGenerator(ImageGenerator):
             timeout=FAL_AI_CALL_TIMEOUT,
         )
         url = result["images"][0]["url"]
-        return _download_image_from_url(url)
+        return await _download_image_from_url(url)
 
     def cost_per_image(self): return COST_FLUX_2_LORA_IMAGE_USD
     def name(self): return "Flux 2 LoRA"
@@ -687,28 +693,13 @@ class Flux2LoRAGenerator(ImageGenerator):
 # Fallback chain
 # ---------------------------------------------------------------------------
 
-LIFESTYLE_CHAIN: list[type[ImageGenerator]] = [
-    KontextMaxGenerator,
-    Flux2LoRAGenerator,
-    GeminiFlashImageGenerator,
-    GeminiProImageGenerator,
-]
-
-COMPOSITE_CHAIN: list[type[ImageGenerator]] = [
-    GeminiFlashImageGenerator,
-    Flux2ProEditGenerator,
-    KlingO3Generator,
-    PillowPackshotGenerator,
-]
-
-
 async def generate_with_fallback(
     chain: list[ImageGenerator],
     prompt: str,
     reference_images: list[PIL.Image.Image] | None = None,
     target_size: tuple[int, int] = LIFESTYLE_SIZE,
 ) -> tuple[PIL.Image.Image | None, str, float]:
-    """Probuje generatory z listy po kolei. Zwraca (image, model_name, cost)."""
+    """Próbuje generatory z listy po kolei. Zwraca (image, model_name, cost)."""
     for gen in chain:
         healthy = await gen.health_check()
         if not healthy:
@@ -729,7 +720,7 @@ async def generate_with_fallback(
 
 
 def get_lifestyle_generators() -> list[ImageGenerator]:
-    """Zwraca instancje generatorow lifestyle (aktualnie dostepnych)."""
+    """Zwraca instancje generatorów lifestyle (aktualnie dostępnych)."""
     gens = []
     gens.append(KontextMaxGenerator())
     gens.append(Flux2LoRAGenerator())
@@ -739,7 +730,7 @@ def get_lifestyle_generators() -> list[ImageGenerator]:
 
 
 def get_composite_generators() -> list[ImageGenerator]:
-    """Zwraca instancje generatorow kompozytow (aktualnie dostepnych)."""
+    """Zwraca instancje generatorów kompozytów (aktualnie dostępnych)."""
     gens = []
     gens.append(GeminiFlashImageGenerator(thinking_level="HIGH"))
     gens.append(Flux2ProEditGenerator())
@@ -749,7 +740,7 @@ def get_composite_generators() -> list[ImageGenerator]:
 
 
 async def get_provider_status() -> dict:
-    """Health check wszystkich providerow."""
+    """Health check wszystkich providerów."""
     providers = {
         "gemini": {
             "configured": bool(GEMINI_API_KEY),

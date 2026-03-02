@@ -1,8 +1,8 @@
 """
-Historia generowan aukcji + system szkicow aukcji.
+Historia generowań aukcji + system szkiców aukcji.
 
 Zapisuje i odczytuje generowane aukcje w formacie JSON Lines.
-System szkicow: pelne dane aukcji (grafiki base64, opis, specyfikacja) w osobnych JSON.
+System szkiców: pełne dane aukcji (grafiki base64, opis, specyfikacja) w osobnych JSON.
 """
 
 import json
@@ -27,7 +27,7 @@ def save_generation(title="", sku="", catalog="", kategoria="",
         sku: kod SKU
         catalog: nazwa katalogu
         kategoria: kategoria produktu
-        bl_product_id: ID produktu w BaseLinker (None jesli nie wyslano)
+        bl_product_id: ID produktu w BaseLinker (None jeśli nie wysłano)
         timestamp: timestamp generowania
         description_html: opis HTML
         images_count: liczba wygenerowanych grafik
@@ -57,7 +57,7 @@ def save_generation(title="", sku="", catalog="", kategoria="",
 
 
 def _rotate_history():
-    """Utrzymuje max MAX_ENTRIES wpisow."""
+    """Utrzymuje max MAX_ENTRIES wpisów."""
     if not HISTORY_FILE.exists():
         return
     lines = HISTORY_FILE.read_text(encoding="utf-8").strip().split("\n")
@@ -67,7 +67,7 @@ def _rotate_history():
 
 
 def load_history():
-    """Wczytuje historie generowan. Zwraca liste dict od najnowszego."""
+    """Wczytuje historię generowań. Zwraca listę dict od najnowszego."""
     if not HISTORY_FILE.exists():
         return []
     entries = []
@@ -83,7 +83,7 @@ def load_history():
 
 
 def cleanup_old_outputs(output_dir, max_files=50):
-    """Usuwa najstarsze pliki ZIP z output/, zachowujac max_files."""
+    """Usuwa najstarsze pliki ZIP z output/, zachowując max_files."""
     if not output_dir.exists():
         return
     zips = sorted(output_dir.glob("aukcja_*.zip"), key=lambda p: p.stat().st_mtime)
@@ -128,7 +128,7 @@ def save_auction(data: dict, status: str = "szkic", auction_id: str | None = Non
     path = AUCTION_DIR / f"{auction_id}.json"
     path.write_text(json.dumps(auction, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # FIX-13: Upsert metadanych w index.jsonl (usun stary wpis przed append)
+    # FIX-13: Upsert metadanych w index.jsonl (usuń stary wpis przed append)
     index_entry = {
         "id": auction_id,
         "created_at": auction["created_at"],
@@ -224,7 +224,7 @@ def update_auction_status(auction_id: str, status: str):
 
 
 def _rebuild_index() -> list:
-    """Skanuje JSON-y i odbudowuje INDEX_FILE. Zwraca listę aukcji (safety net)."""
+    """Skanuje JSON-y i odbudowuje INDEX_FILE. Zwraca listę aukcji."""
     if not AUCTION_DIR.exists():
         return []
     auctions = []

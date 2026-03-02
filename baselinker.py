@@ -1,5 +1,5 @@
 """
-GranitoweZlewy · Klient BaseLinker API v3.0
+GranitoweZlewy · Klient BaseLinker API v4.3
 Integracja z Allegro: walidacja produktu, upload zdjęć, photo ordering.
 Polskie komunikaty, retry, auto-kategoryzacja.
 """
@@ -26,8 +26,6 @@ from catalogs import get_bl_category_id
 # ---------------------------------------------------------------------------
 # Konfiguracja
 # ---------------------------------------------------------------------------
-
-BASELINKER_API_TOKEN = os.environ.get("BASELINKER_API_TOKEN", "")
 
 logger = logging.getLogger("baselinker")
 
@@ -165,11 +163,11 @@ def sort_images_for_allegro(image_paths: list[str]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Klasa BaseLinkerClient (v3.0, async)
+# Klasa BaseLinkerClient (v4.3, async)
 # ---------------------------------------------------------------------------
 
 class BaseLinkerClient:
-    """Klient BaseLinker API v3.0. Polskie komunikaty, walidacja, photo ordering."""
+    """Klient BaseLinker API v4.3. Polskie komunikaty, walidacja, photo ordering."""
 
     def __init__(self, api_token: str):
         self.api_token = api_token
@@ -333,7 +331,7 @@ send_to_baselinker = send_to_baselinker_sync
 
 
 # ---------------------------------------------------------------------------
-# Funkcja wysyłki (async, v3.0, do użycia z api.py)
+# Funkcja wysyłki (async, v4.3, do użycia z api.py)
 # ---------------------------------------------------------------------------
 
 async def send_to_baselinker_async(

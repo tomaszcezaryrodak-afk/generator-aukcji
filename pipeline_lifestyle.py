@@ -2,7 +2,7 @@
 """
 Standalone pipeline: packshot -> lifestyle (4 warianty)
 
-Uzycie:
+Użycie:
     python pipeline_lifestyle.py --input packshot.jpg --output ./output/
     python pipeline_lifestyle.py --input packshot.jpg --output ./output/ --scenes 2  # tylko 2 sceny
     python pipeline_lifestyle.py --batch ./packshoty/ --output ./output/  # batch
@@ -37,7 +37,7 @@ try:
     REMBG_AVAILABLE = True
 except ImportError:
     REMBG_AVAILABLE = False
-    print("[WARN] rembg niedostepne. pip install rembg[cpu]")
+    print("[WARN] rembg niedostępne. pip install rembg[cpu]")
 
 from google import genai
 from google.genai import types
@@ -51,7 +51,7 @@ MAX_RETRIES = 2
 
 COST_PER_IMAGE_USD = 0.134
 COST_PER_TEXT_USD = 0.02
-USD_TO_PLN = 4.10
+USD_TO_PLN = 3.57
 
 
 # ---------------------------------------------------------------------------
@@ -94,13 +94,13 @@ _rembg_session = None
 
 
 def remove_background(pil_image: PIL.Image.Image) -> PIL.Image.Image:
-    """Usuwa tlo ze zdjecia. Zwraca PIL Image RGBA."""
+    """Usuwa tło ze zdjęcia. Zwraca PIL Image RGBA."""
     global _rembg_session
     if not REMBG_AVAILABLE:
-        print("  [WARN] rembg niedostepne, zwracam oryginal z kanalem alpha")
+        print("  [WARN] rembg niedostępne, zwracam oryginał z kanałem alpha")
         return pil_image.convert("RGBA")
     if _rembg_session is None:
-        print("  Ladowanie modelu birefnet-general (pierwszy raz, ~10s)...")
+        print("  Ładowanie modelu birefnet-general (pierwszy raz, ~10s)...")
         _rembg_session = rembg_new_session("birefnet-general")
     return rembg_remove(pil_image, session=_rembg_session)
 
@@ -176,7 +176,7 @@ async def analyze_product_dna(client, pil_images: list) -> str:
 def create_studio_packshots(
     transparent_img: PIL.Image.Image,
 ) -> list[PIL.Image.Image]:
-    """2 packshoty: produkt na bialym tle z cieniem."""
+    """2 packshoty: produkt na białym tle z cieniem."""
     results = []
     canvas_w, canvas_h = 1200, 900
 
@@ -204,7 +204,7 @@ def create_studio_packshots(
     canvas.paste(product, (x, y), mask=product)
     results.append(canvas.convert("RGB"))
 
-    # Packshot 2: zmniejszony (65%) z wiekszym marginesem
+    # Packshot 2: zmniejszony (65%) z większym marginesem
     canvas2 = PIL.Image.new("RGBA", (canvas_w, canvas_h), (255, 255, 255, 255))
     product2 = transparent_img.copy()
     ratio2 = min((canvas_w * 0.65) / product2.width, (canvas_h * 0.65) / product2.height)
@@ -382,7 +382,7 @@ async def run_selfcheck(
     generated: PIL.Image.Image,
     product_dna_json: str,
 ) -> tuple[int, list, str]:
-    """Porownuje wygenerowane z oryginalem. Zwraca (score, differences, corrections)."""
+    """Porównuje wygenerowane z oryginałem. Zwraca (score, differences, corrections)."""
     prompt = get_selfcheck_prompt(product_dna_json)
     response = await asyncio.to_thread(
         lambda: client.models.generate_content(
@@ -415,12 +415,12 @@ async def run_selfcheck(
 
 
 # ---------------------------------------------------------------------------
-# Dodatkowe metryki jakosci (lokalne, bez API)
+# Dodatkowe metryki jakości (lokalne, bez API)
 # ---------------------------------------------------------------------------
 
 
 def quality_metrics(generated: PIL.Image.Image) -> dict:
-    """Lokalne metryki jakosci (rozdzielczosc, jasnosc, kontrast)."""
+    """Lokalne metryki jakości (rozdzielczość, jasność, kontrast)."""
     w, h = generated.size
     stat = ImageStat.Stat(generated)
     mean_brightness = stat.mean[0]
@@ -441,7 +441,7 @@ def quality_metrics(generated: PIL.Image.Image) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Pipeline glowny
+# Pipeline główny
 # ---------------------------------------------------------------------------
 
 
@@ -450,9 +450,9 @@ async def run_pipeline(
     output_dir: str,
     max_scenes: int = 4,
 ) -> dict:
-    """Pelny pipeline: packshot -> 2 packshoty + N lifestyle."""
+    """Pełny pipeline: packshot -> 2 packshoty + N lifestyle."""
     if not GEMINI_API_KEY:
-        print("BLAD: Brak GEMINI_API_KEY w zmiennych srodowiskowych.")
+        print("BŁĄD: Brak GEMINI_API_KEY w zmiennych środowiskowych.")
         sys.exit(1)
 
     output_path = Path(output_dir)
@@ -476,13 +476,13 @@ async def run_pipeline(
 
     t0 = time.time()
 
-    # Laduj obraz
+    # Ładuj obraz
     original = PIL.Image.open(input_path)
     original.load()
-    print(f"\n[1/6] Zaladowano: {input_path} ({original.size[0]}x{original.size[1]})")
+    print(f"\n[1/6] Załadowano: {input_path} ({original.size[0]}x{original.size[1]})")
 
     # Krok 1: Background removal
-    print("\n[2/6] Usuwanie tla (rembg)...")
+    print("\n[2/6] Usuwanie tła (rembg)...")
     t_bg = time.time()
     transparent = remove_background(original)
     transparent_path = output_path / "transparent.png"
@@ -505,8 +505,8 @@ async def run_pipeline(
         dna_parsed = json.loads(product_dna)
         print(f"  Typ: {dna_parsed.get('product_type', '?')}")
         print(f"  Kolor: {dna_parsed.get('color', '?')}")
-        print(f"  Ksztalt: {dna_parsed.get('shape', '?')}")
-        print(f"  Montaz: {dna_parsed.get('mounting_type', '?')}")
+        print(f"  Kształt: {dna_parsed.get('shape', '?')}")
+        print(f"  Montaż: {dna_parsed.get('mounting_type', '?')}")
         visible = dna_parsed.get("visible_elements", [])
         not_present = dna_parsed.get("NOT_present", [])
         if visible:
@@ -519,7 +519,7 @@ async def run_pipeline(
     await asyncio.sleep(RATE_LIMIT_SEC)
 
     # Krok 3: Packshoty
-    print("\n[4/6] Tworzenie packshotow (Pillow, 0 API calls)...")
+    print("\n[4/6] Tworzenie packshotów (Pillow, 0 API calls)...")
     packshots = create_studio_packshots(transparent)
     for i, pack in enumerate(packshots):
         pack_key = f"packshot_{i + 1}"
@@ -547,7 +547,7 @@ async def run_pipeline(
                 client,
                 prompt,
                 reference_images,
-                f"{scene_name} (proba {attempt + 1})",
+                f"{scene_name} (próba {attempt + 1})",
             )
             stats["image_api_calls"] += 1
 
@@ -579,7 +579,7 @@ async def run_pipeline(
                 stats["retries"] += 1
                 print(
                     f"  [RETRY] Score {score} < {RETRY_THRESHOLD}, "
-                    f"regeneracja z korektami (proba {attempt + 2})..."
+                    f"regeneracja z korektami (próba {attempt + 2})..."
                 )
                 prompt = build_lifestyle_prompt(
                     scene, product_dna, corrections=corrections
@@ -607,7 +607,7 @@ async def run_pipeline(
             status = "PASS" if best_score >= 7 else "WARN"
             print(f"  [{status}] {key}.png (score: {best_score}/10)")
         else:
-            print(f"  [SKIP] {scene_name}: nie udalo sie wygenerowac")
+            print(f"  [SKIP] {scene_name}: nie udało się wygenerować")
 
         await asyncio.sleep(RATE_LIMIT_SEC)
 
@@ -629,11 +629,11 @@ async def run_pipeline(
     print(f"  API calls (text): {stats['text_api_calls']}")
     print(f"  Retry: {stats['retries']}")
     print(f"  Koszt: ${stats['cost_usd']} (~{stats['cost_pln']} PLN)")
-    print(f"  Zdjecia wygenerowane: {len(stats['results'])}")
+    print(f"  Zdjęcia wygenerowane: {len(stats['results'])}")
 
     if stats["scores"]:
         avg_score = sum(stats["scores"].values()) / len(stats["scores"])
-        print(f"  Sredni score: {avg_score:.1f}/10")
+        print(f"  Średni score: {avg_score:.1f}/10")
 
         low_scores = {k: v for k, v in stats["scores"].items() if v < 7}
         if low_scores:
@@ -655,7 +655,7 @@ async def run_pipeline(
 
 
 async def batch_pipeline(input_dir: str, output_base: str, max_scenes: int = 4):
-    """Przetwarza wszystkie packshoty z folderu."""
+    """Przetwarza wszystkie packshoty z katalogu."""
     input_path = Path(input_dir)
     extensions = {".jpg", ".jpeg", ".png", ".webp"}
     files = sorted(
@@ -663,10 +663,10 @@ async def batch_pipeline(input_dir: str, output_base: str, max_scenes: int = 4):
     )
 
     if not files:
-        print(f"BLAD: Brak zdjec w {input_dir}")
+        print(f"BŁĄD: Brak zdjęć w {input_dir}")
         return
 
-    print(f"Znaleziono {len(files)} packshotow w {input_dir}")
+    print(f"Znaleziono {len(files)} packshotów w {input_dir}")
     all_stats = []
 
     for i, f in enumerate(files, 1):
@@ -684,7 +684,7 @@ async def batch_pipeline(input_dir: str, output_base: str, max_scenes: int = 4):
             all_stats.append({"input": str(f), "error": str(e)})
 
         if i < len(files):
-            print(f"\n  Pauza 5s przed nastepnym produktem...")
+            print(f"\n  Pauza 5s przed następnym produktem...")
             await asyncio.sleep(5)
 
     # Podsumowanie batch
@@ -696,8 +696,8 @@ async def batch_pipeline(input_dir: str, output_base: str, max_scenes: int = 4):
     total_images = sum(len(s.get("results", {})) for s in all_stats)
     errors = sum(1 for s in all_stats if "error" in s)
 
-    print(f"  Produkty: {len(files)} ({errors} bledow)")
-    print(f"  Zdjecia: {total_images}")
+    print(f"  Produkty: {len(files)} ({errors} błędów)")
+    print(f"  Zdjęcia: {total_images}")
     print(f"  Czas: {total_time:.0f}s ({total_time / 60:.1f} min)")
     print(f"  Koszt: {total_cost:.2f} PLN")
 
@@ -720,9 +720,9 @@ if __name__ == "__main__":
         description="Pipeline: packshot -> lifestyle (zlewy granitowe)"
     )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--input", help="Sciezka do pojedynczego packshot (JPEG/PNG)")
-    group.add_argument("--batch", help="Folder z packshotami (batch processing)")
-    parser.add_argument("--output", default="./output", help="Folder wyjsciowy")
+    group.add_argument("--input", help="Ścieżka do pojedynczego packshotu (JPEG/PNG)")
+    group.add_argument("--batch", help="Katalog z packshotami (batch processing)")
+    parser.add_argument("--output", default="./output", help="Katalog wyjściowy")
     parser.add_argument(
         "--scenes", type=int, default=4, choices=[1, 2, 3, 4],
         help="Liczba scen lifestyle (default: 4)",
@@ -731,11 +731,11 @@ if __name__ == "__main__":
 
     if args.input:
         if not Path(args.input).exists():
-            print(f"BLAD: Plik nie istnieje: {args.input}")
+            print(f"BŁĄD: Plik nie istnieje: {args.input}")
             sys.exit(1)
         asyncio.run(run_pipeline(args.input, args.output, max_scenes=args.scenes))
     else:
         if not Path(args.batch).is_dir():
-            print(f"BLAD: Folder nie istnieje: {args.batch}")
+            print(f"BŁĄD: Katalog nie istnieje: {args.batch}")
             sys.exit(1)
         asyncio.run(batch_pipeline(args.batch, args.output, max_scenes=args.scenes))

@@ -17,8 +17,8 @@ function safeHandle(e: MessageEvent, handler: (data: Record<string, unknown>) =>
   if (!data) return;
   try {
     handler(data);
-  } catch (err) {
-    console.error('[SSE] Event handler error:', err);
+  } catch {
+    // Silently catch SSE handler errors in production
   }
 }
 
@@ -28,35 +28,59 @@ export function useSSE() {
   const jobIdRef = useRef<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectDelay = useRef(3000);
+  const reconnectAttempts = useRef(0);
   const unmountedRef = useRef(false);
+  const connectRef = useRef<((jobId: string) => Promise<void>) | null>(null);
 
   const connect = useCallback(async (jobId: string) => {
     if (!jobId || esRef.current) return;
+    // Clear any pending reconnect timer
+    if (reconnectTimer.current) {
+      clearTimeout(reconnectTimer.current);
+      reconnectTimer.current = null;
+    }
     jobIdRef.current = jobId;
 
     let ticket: string;
     try {
       ticket = await api.getSSETicket();
     } catch {
-      dispatch({ type: 'SET_ERROR', error: 'Nie udało się uzyskać ticketu SSE' });
+      dispatch({ type: 'SET_ERROR', error: 'Nie udało się nawiązać połączenia SSE' });
       return;
     }
 
     const es = api.createSSE(jobId, ticket);
     esRef.current = es;
 
-    es.onopen = () => setIsConnected(true);
+    es.onopen = () => {
+      setIsConnected(true);
+      reconnectDelay.current = 3000;
+      reconnectAttempts.current = 0;
+      // Clear stale connection error on successful (re)connect
+      dispatch({ type: 'SET_ERROR', error: null });
+    };
 
     es.onerror = () => {
       setIsConnected(false);
       es.close();
       esRef.current = null;
 
+      reconnectAttempts.current += 1;
+      if (reconnectAttempts.current > 5) {
+        dispatch({ type: 'SET_ERROR', error: 'Utracono połączenie z serwerem. Odśwież stronę.' });
+        toast.error('Utracono połączenie z serwerem', { id: 'sse-lost' });
+        return;
+      }
+
+      const delay = reconnectDelay.current;
+      reconnectDelay.current = Math.min(delay * 2, 30000);
+
       reconnectTimer.current = setTimeout(() => {
         if (jobIdRef.current && !unmountedRef.current) {
-          connect(jobIdRef.current);
+          connectRef.current?.(jobIdRef.current);
         }
-      }, 3000);
+      }, delay);
     };
 
     es.addEventListener('progress', (e) => safeHandle(e as MessageEvent, (data) => {
@@ -124,15 +148,17 @@ export function useSSE() {
     }));
 
     es.addEventListener('retry', (e) => safeHandle(e as MessageEvent, (data) => {
+      const scene = (data.scene as string) || '';
+      const attempt = (data.attempt as number) || 0;
       dispatch({
         type: 'SET_PROGRESS',
-        progress: { step: 0, total: 0, message: `Ponowna próba: ${(data.reason as string) || ''}` },
+        progress: { step: 0, total: 0, message: `Ponowna próba${scene ? `: ${scene}` : ''} (${attempt})` },
       });
     }));
 
     es.addEventListener('soft_warning', (e) => safeHandle(e as MessageEvent, (data) => {
       const msg = (data.message as string) || 'Ostrzeżenie';
-      toast.warning(msg);
+      toast.warning(msg, { id: 'sse-warning' });
       dispatch({
         type: 'SET_PROGRESS',
         progress: { step: 0, total: 0, message: msg },
@@ -140,12 +166,33 @@ export function useSSE() {
     }));
 
     es.addEventListener('phase_timeout', () => {
-      toast.error('Przekroczono czas oczekiwania na akceptację fazy');
+      toast.error('Przekroczono czas oczekiwania na akceptację fazy', { id: 'phase-timeout' });
       dispatch({ type: 'SET_ERROR', error: 'Przekroczono czas oczekiwania na akceptację fazy' });
+      dispatch({ type: 'SET_GENERATING', isGenerating: false });
+      dispatch({ type: 'SET_PHASE', phase: 'idle' });
+      es.close();
+      esRef.current = null;
+      jobIdRef.current = null;
+      setIsConnected(false);
+    });
+
+    es.addEventListener('cancelled', () => {
+      toast.info('Generowanie anulowane', { id: 'generation-cancelled' });
+      dispatch({ type: 'SET_ERROR', error: null });
+      dispatch({ type: 'SET_GENERATING', isGenerating: false });
+      dispatch({ type: 'SET_PHASE', phase: 'idle' });
+      es.close();
+      esRef.current = null;
+      jobIdRef.current = null;
+      setIsConnected(false);
     });
 
     es.addEventListener('complete', (e) => safeHandle(e as MessageEvent, (data) => {
-      toast.success('Generowanie zakończone');
+      const elapsedSec = (data.elapsed_sec as number) || 0;
+      const mins = Math.floor(elapsedSec / 60);
+      const secs = Math.round(elapsedSec % 60);
+      const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+      toast.success(`Generowanie zakończone w ${timeStr}`, { id: 'generation-complete' });
       dispatch({
         type: 'SET_RESULTS',
         images: (data.images as GeneratedImage[]) || [],
@@ -160,6 +207,21 @@ export function useSSE() {
           perModel: (costs.per_model as Record<string, number>) || {},
         });
       }
+      // Banned AI phrases warning
+      const bannedPhrases = data.banned_phrases as string[] | undefined;
+      if (bannedPhrases && bannedPhrases.length > 0) {
+        const preview = bannedPhrases.slice(0, 3).join(', ');
+        const suffix = bannedPhrases.length > 3 ? ` (+${bannedPhrases.length - 3})` : '';
+        toast.warning(`Opis zawiera frazy AI: ${preview}${suffix}. Sprawdź i popraw w edytorze.`, {
+          id: 'banned-phrases',
+          duration: 10000,
+        });
+      }
+      dispatch({
+        type: 'SET_ELAPSED',
+        seconds: elapsedSec,
+        timestamp: (data.timestamp as string) || '',
+      });
       es.close();
       esRef.current = null;
       jobIdRef.current = null;
@@ -170,8 +232,14 @@ export function useSSE() {
       if (e instanceof MessageEvent) {
         safeHandle(e, (data) => {
           const msg = (data.message as string) || 'Błąd generowania';
-          toast.error(msg);
+          toast.error(msg, { id: 'sse-error' });
           dispatch({ type: 'SET_ERROR', error: msg });
+          dispatch({ type: 'SET_GENERATING', isGenerating: false });
+          dispatch({ type: 'SET_PHASE', phase: 'idle' });
+          es.close();
+          esRef.current = null;
+          jobIdRef.current = null;
+          setIsConnected(false);
         });
       }
     });
@@ -179,20 +247,74 @@ export function useSSE() {
     es.addEventListener('cost_update', (e) => safeHandle(e as MessageEvent, (data) => {
       dispatch({
         type: 'SET_COST',
-        total: (data.total as number) || 0,
+        total: (data.total as number) || (data.total_usd as number) || 0,
         perModel: (data.per_model as Record<string, number>) || {},
       });
     }));
+
+    es.addEventListener('warning', (e) => safeHandle(e as MessageEvent, (data) => {
+      const msg = (data.message as string) || '';
+      if (msg) toast.warning(msg, { id: 'sse-warning' });
+    }));
+
+    es.addEventListener('background_removed', (e) => safeHandle(e as MessageEvent, (data) => {
+      const msg = (data.message as string) || '';
+      if (msg) {
+        toast.info(msg, { id: 'bg-removed' });
+      }
+    }));
   }, [dispatch]);
 
+  // Keep ref in sync for reconnect timer callback
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
+
   const disconnect = useCallback(() => {
-    if (reconnectTimer.current !== null) clearTimeout(reconnectTimer.current);
+    if (reconnectTimer.current !== null) {
+      clearTimeout(reconnectTimer.current);
+      reconnectTimer.current = null;
+    }
     if (esRef.current) {
       esRef.current.close();
       esRef.current = null;
     }
     jobIdRef.current = null;
     setIsConnected(false);
+  }, []);
+
+  // Manual reconnect after max retries exhausted
+  const reconnect = useCallback(() => {
+    const savedJobId = jobIdRef.current;
+    if (!savedJobId) return;
+    // Reset counters
+    reconnectAttempts.current = 0;
+    reconnectDelay.current = 3000;
+    // Close stale connection
+    if (esRef.current) {
+      esRef.current.close();
+      esRef.current = null;
+    }
+    dispatch({ type: 'SET_ERROR', error: null });
+    connectRef.current?.(savedJobId);
+  }, [dispatch]);
+
+  // Reconnect when tab becomes visible and connection is dead
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (
+        document.visibilityState === 'visible' &&
+        jobIdRef.current &&
+        !esRef.current &&
+        reconnectAttempts.current < 5
+      ) {
+        reconnectAttempts.current = 0;
+        reconnectDelay.current = 3000;
+        connectRef.current?.(jobIdRef.current);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
   useEffect(() => {
@@ -202,5 +324,5 @@ export function useSSE() {
     };
   }, [disconnect]);
 
-  return { connect, disconnect, isConnected };
+  return { connect, disconnect, reconnect, isConnected };
 }

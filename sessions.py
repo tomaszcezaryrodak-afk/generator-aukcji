@@ -54,7 +54,7 @@ class SessionData:
     regen_count: int = 0
     # SSE queue
     sse_queue: asyncio.Queue | None = None
-    # --- Pipeline v3.0: Fazy ---
+    # --- Pipeline v4.3: Fazy ---
     current_phase: str = "idle"  # idle | dna | phase1 | phase1_approval | phase2 | phase2_approval | finalizing | done
     phase_event: asyncio.Event | None = None
     phase_feedback: str = ""
@@ -69,6 +69,8 @@ class SessionData:
     approved_packshots: dict = field(default_factory=dict)  # key -> file_path
     # Generation mode
     generation_mode: str = "interactive"  # interactive | batch
+    # Pipeline elapsed time (seconds)
+    pipeline_elapsed_sec: float = 0.0
     # Cancel flag (sprawdzane przez _run_generation)
     cancel_requested: bool = False
     # Koszty per model (tracking)
@@ -102,7 +104,7 @@ def create_session(max_sessions: int = 5) -> SessionData:
     # Enforce concurrent session limit
     cleanup_expired()
     if len(sessions) >= max_sessions:
-        raise TooManySessions(f"Limit sesji ({max_sessions}) osiagniety")
+        raise TooManySessions(f"Limit sesji ({max_sessions}) osiągnięty")
     token = uuid.uuid4().hex
     session = SessionData(token=token)
     sessions[token] = session
@@ -164,7 +166,7 @@ def create_sse_ticket(session_token: str) -> str:
 
 
 def validate_sse_ticket(ticket_id: str) -> SessionData | None:
-    """Waliduje i KASUJE ticket (one-time use). Zwraca sesje lub None."""
+    """Waliduje i KASUJE ticket (one-time use). Zwraca sesję lub None."""
     ticket = sse_tickets.pop(ticket_id, None)
     if ticket is None:
         return None

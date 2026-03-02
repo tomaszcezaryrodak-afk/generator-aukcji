@@ -1,5 +1,7 @@
 /* GranitoweZlewy Dashboard · Clean Design v3.0 | 2026-02-26 */
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 /* ============================================================
    TOKENY
    ============================================================ */
@@ -28,9 +30,6 @@
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
 
 /* ============================================================
    GLOBALNE

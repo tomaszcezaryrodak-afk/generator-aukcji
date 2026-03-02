@@ -1,7 +1,7 @@
 """
-Prompty do generowania grafik i opisow produktowych.
+Prompty do generowania grafik i opisów produktowych.
 
-Obsluguje rozne katalogi przez import z catalogs.py.
+Obsługuje różne katalogi przez import z catalogs.py.
 """
 
 import json
@@ -109,7 +109,7 @@ def check_ban_list(text: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Pipeline v3.0: Bloki stale do promptow (reuzywalne)
+# Pipeline v4.3: Bloki stałe do promptów (reużywalne)
 # ---------------------------------------------------------------------------
 
 DSLR_REALISM_BLOCK = (
@@ -179,7 +179,7 @@ def get_image_prompts(kategoria, kolor_zlew="Czarny nakrapiany",
                       kolor_syfon="Złoty",
                       kolor_dozownik="Złoty",
                       catalog_name="granitowe_zlewy"):
-    """Generuje prompty do obrazow dopasowane do kategorii, kolorystyki i katalogu."""
+    """Generuje prompty do obrazów dopasowane do kategorii, kolorystyki i katalogu."""
 
     # Backward compat: LED i inne katalogi
     if catalog_name != "granitowe_zlewy":
@@ -678,7 +678,7 @@ def get_analysis_prompt(
 ) -> str:
     """Prompt do analizy produktu (nowy flow: analyze -> confirm -> generate).
 
-    AI analizuje zdjecia + specyfikacje i zwraca sugestie kategorii, kolorow i features.
+    AI analizuje zdjęcia + specyfikację i zwraca sugestie kategorii, kolorów i features.
     """
     categories_str = "\n".join(f"  - {c}" for c in available_categories)
 
@@ -691,23 +691,23 @@ def get_analysis_prompt(
     features_str = ", ".join(required_features)
 
     return f"""Analizujesz produkt z katalogu "{catalog_name}".
-Na podstawie zdjec i opisu produktu, zasugeruj parametry aukcji Allegro.
+Na podstawie zdjęć i opisu produktu, zasugeruj parametry aukcji Allegro.
 
 SPECYFIKACJA PRODUKTU:
 {spec_text}
 
-DOSTEPNE KATEGORIE (wybierz JEDNA najbardziej pasujaca + max 2 alternatywy):
+DOSTĘPNE KATEGORIE (wybierz JEDNĄ najbardziej pasującą + max 2 alternatywy):
 {categories_str}
 
-DOSTEPNE KOLORY PER ELEMENT:
+DOSTĘPNE KOLORY PER ELEMENT:
 {colors_str}
 
 WYMAGANE FEATURES DLA TEJ KATEGORII:
 {features_str}
 
-Zwroc DOKLADNIE taki JSON (bez dodatkowego tekstu, bez ```json blokow):
+Zwróć DOKŁADNIE taki JSON (bez dodatkowego tekstu, bez ```json bloków):
 {{
-  "kategoria": "nazwa kategorii z listy powyzej",
+  "kategoria": "nazwa kategorii z listy powyżej",
   "kategoria_alternatives": ["max 2 alternatywne kategorie"],
   "kolory": {{
     "zlew": "kolor z listy kolor_zlew lub null",
@@ -716,18 +716,18 @@ Zwroc DOKLADNIE taki JSON (bez dodatkowego tekstu, bez ```json blokow):
     "dozownik": "kolor z listy kolor_dozownik lub null"
   }},
   "features": {{
-    "nazwa_parametru": "wartosc",
+    "nazwa_parametru": "wartość",
     "...": "..."
   }},
-  "tytul_suggestion": "propozycja tytulu Allegro 60-75 znakow",
+  "tytul_suggestion": "propozycja tytułu Allegro 60-75 znaków",
   "sku_suggestion": "propozycja SKU w formacie TYP-MODEL-KOLOR"
 }}
 
 ZASADY:
-1. Kategorie i kolory MUSZA byc z list powyzej (dokladne dopasowanie nazw)
-2. Features: wypelnij TYLKO te ktore wynikaja ze specyfikacji i zdjec
-3. Kolory: jesli element nie wystepuje w produkcie, podaj null
-4. Tytul: 60-75 znakow, slowa kluczowe na poczatku, bez CAPS LOCK
+1. Kategorie i kolory MUSZĄ być z list powyżej (dokładne dopasowanie nazw)
+2. Features: wypełnij TYLKO te które wynikają ze specyfikacji i zdjęć
+3. Kolory: jeśli element nie występuje w produkcie, podaj null
+4. Tytuł: 60-75 znaków, słowa kluczowe na początku, bez CAPS LOCK
 5. SKU: format TYP-MODEL-KOLOR (np. ZLEW-SONGOS-CZ, BAT-FLEX-CZZL)
 6. Odpowiedz TYLKO obiektem JSON"""
 
@@ -935,7 +935,7 @@ def get_composite_packshot_prompt(
     }
     perspective_desc = perspective_map.get(perspective, perspective_map["top-down"])
 
-    # Nazewnictwo obrazow referencyjnych (Nano Banana best practice)
+    # Nazewnictwo obrazów referencyjnych (Nano Banana best practice)
     ref_lines = []
     for i, prod in enumerate(products, 1):
         ref_lines.append(f"Image {i} ({prod['name']}): {prod.get('description', '')}")
@@ -1008,7 +1008,7 @@ def get_lifestyle_prompt_v2(
     corrections: str = "",
     model_type: str = "gemini",
 ) -> str:
-    """Prompt lifestyle v3.0 z DSLR realism, Product DNA, Shadow/Reflection.
+    """Prompt lifestyle v4.3 z DSLR realism, Product DNA, Shadow/Reflection.
 
     Args:
         scene_config: slownik z name, countertop, perspective, details
@@ -1117,11 +1117,11 @@ Props/details: {scene_config.get('details', 'minimal kitchen accessories')}
 
 
 def get_selfcheck_prompt(product_dna_json: str) -> str:
-    """Prompt do self-check v3.0: porownanie z ORYGINALEM (nie z promptem).
+    """Prompt do self-check v4.3: porównanie z ORYGINAŁEM (nie z promptem).
 
-    Oczekuje 2 obrazow: [oryginal, wygenerowane].
+    Oczekuje 2 obrazów: [oryginał, wygenerowane].
     Weighted scoring: bowl_count 25%, color 30%, shape 15%, accessories 10%, realism 20%.
-    Prog akceptacji: 8/10.
+    Próg akceptacji: 8/10.
     """
     return f"""You are a quality control inspector for e-commerce product photography on Allegro.
 
@@ -1273,7 +1273,7 @@ if __name__ == "__main__":
     assert len(regen_test) < 2000, "Prompt za długi po sanityzacji"
     print("FIX-08: sanityzacja regen: OK")
 
-    # --- Pipeline v3.0: Product DNA + Lifestyle v2 + Self-check + Composite ---
+    # --- Pipeline v4.3: Product DNA + Lifestyle v2 + Self-check + Composite ---
 
     # 9. Test get_product_dna_prompt
     dna_prompt = get_product_dna_prompt()
@@ -1283,7 +1283,7 @@ if __name__ == "__main__":
     assert "ONLY the JSON" in dna_prompt, "Brak instrukcji JSON-only"
     print("get_product_dna_prompt: OK")
 
-    # 10. Test LIFESTYLE_SCENES (6 scen w v3.0)
+    # 10. Test LIFESTYLE_SCENES (6 scen)
     assert len(LIFESTYLE_SCENES) == 6, f"Oczekiwano 6 scen, jest {len(LIFESTYLE_SCENES)}"
     scene_names = [s["name"] for s in LIFESTYLE_SCENES]
     assert "Drewno · overhead" in scene_names, "Brak sceny Drewno · overhead"
@@ -1349,7 +1349,7 @@ if __name__ == "__main__":
     assert "Step 5" in lp_flux, "Flux: brak Step 5"
     print("get_lifestyle_prompt_v2 (flux): OK")
 
-    # 15. Test get_selfcheck_prompt (v3.0 z nowymi wagami)
+    # 15. Test get_selfcheck_prompt (v4.3 z nowymi wagami)
     sc_prompt = get_selfcheck_prompt(test_dna)
     assert "bowl_count_score" in sc_prompt, "Brak bowl_count_score w selfcheck"
     assert "color_score" in sc_prompt, "Brak color_score w selfcheck"
@@ -1365,7 +1365,7 @@ if __name__ == "__main__":
     assert "PRODUCT DNA" in sc_prompt, "Brak Product DNA w selfcheck"
     assert "TWO images" in sc_prompt, "Brak instrukcji o 2 obrazach"
     assert "ONLY a JSON" in sc_prompt, "Brak instrukcji JSON-only"
-    print("get_selfcheck_prompt (v3.0): OK")
+    print("get_selfcheck_prompt (v4.3): OK")
 
     # 16. Test get_composite_packshot_prompt
     products = [
@@ -1392,7 +1392,7 @@ if __name__ == "__main__":
     assert "sticker" in SHADOW_REFLECTION_BLOCK, "Shadow block brak sticker"
     assert "moody" in BANNED_PHRASES_BLOCK, "Banned block brak moody"
     assert "PRESERVATION" in PRESERVATION_LIST_BLOCK, "Preservation block brak"
-    print("Bloki stale v3.0: OK")
+    print("Bloki stałe v4.3: OK")
 
     # 19. Test build_product_dna_enforcement
     test_dna_dict = json.loads(test_dna)

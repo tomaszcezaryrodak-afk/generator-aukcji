@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
 interface AuthState {
@@ -26,6 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSessionId(res.session_id);
     sessionStorage.setItem('auth_token', res.token);
     sessionStorage.setItem('session_id', res.session_id);
+    sessionStorage.setItem('session_start', String(Date.now()));
   }, []);
 
   const logout = useCallback(() => {
@@ -41,9 +43,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api.setToken(token);
   }
 
-  // Auto-logout on 401
+  // Validate stored token on mount (handles server restart / expired sessions)
   useEffect(() => {
-    api.setOnUnauthorized(logout);
+    if (!token) return;
+    let cancelled = false;
+    api.validateSession().then((valid) => {
+      if (!cancelled && !valid) {
+        logout();
+        toast.error('Sesja wygasła. Zaloguj się ponownie.', { id: 'session-expired' });
+      }
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only on mount
+  }, []);
+
+  // Auto-logout on 401 with user notification
+  useEffect(() => {
+    api.setOnUnauthorized(() => {
+      logout();
+      toast.error('Sesja wygasła. Zaloguj się ponownie.', { id: 'session-expired' });
+    });
     return () => api.setOnUnauthorized(null);
   }, [logout]);
 
@@ -62,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be inside AuthProvider');

@@ -3,20 +3,48 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'" />
+    <meta name="color-scheme" content="light" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data: https://*.fal.ai https://*.fal.run https://*.fal.media https://*.googleapis.com https://*.ggpht.com https://*.googleusercontent.com; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self' https://*.fal.ai https://*.fal.run https://*.fal.media https://*.googleapis.com https://*.googleusercontent.com; base-uri 'self'; form-action 'self'; upgrade-insecure-requests" />
+    <meta name="referrer" content="same-origin" />
+    <meta name="robots" content="noindex, nofollow" />
     <meta name="description" content="Generator zdjęć produktowych i aukcji Allegro dla Granitowe Zlewy" />
     <meta name="theme-color" content="#c4a882" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Generator GZ" />
+    <meta name="format-detection" content="telephone=no" />
     <meta property="og:title" content="Generator Aukcji · Granitowe Zlewy" />
     <meta property="og:description" content="Automatyczny generator packshotów, aranżacji i opisów produktów" />
     <meta property="og:type" content="website" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fal.run" crossorigin />
+    <link rel="preconnect" href="https://v3.fal.media" crossorigin />
+    <link rel="preconnect" href="https://generativelanguage.googleapis.com" crossorigin />
+    <link rel="dns-prefetch" href="https://fal.run" />
+    <link rel="dns-prefetch" href="https://v3.fal.media" />
+    <link rel="dns-prefetch" href="https://generativelanguage.googleapis.com" />
+    <link rel="icon" type="image/svg+xml" href="/app/favicon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/app/apple-touch-icon.png" />
+    <link rel="manifest" href="/app/manifest.json" />
     <title>Generator Aukcji · Granitowe Zlewy</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div style="display:flex;align-items:center;justify-content:center;min-height:100dvh;font-family:Inter Variable,Inter,system-ui,sans-serif;background:#f7f3ef">
+        <div style="text-align:center">
+          <div style="width:48px;height:48px;margin:0 auto 16px;border:3px solid #e8e0d5;border-top-color:#c4a882;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+          <p style="color:#8a7a68;font-size:13px">Ładowanie...</p>
+        </div>
+      </div>
+      <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+    </div>
+    <noscript>
+      <div style="display:flex;align-items:center;justify-content:center;min-height:100dvh;font-family:Inter Variable,Inter,system-ui,sans-serif;padding:2rem;text-align:center">
+        <div>
+          <h1 style="font-size:1.25rem;margin-bottom:0.5rem">Generator Aukcji · Granitowe Zlewy</h1>
+          <p style="color:#666">Włącz JavaScript, aby korzystać z aplikacji.</p>
+        </div>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="102" fill="#c4a882"/>
+  <rect x="8" y="8" width="496" height="496" rx="94" fill="none" stroke="#b08d5b" stroke-width="3" opacity="0.3"/>
+  <text x="256" y="308" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-weight="700" font-size="220" fill="#fff" letter-spacing="-6">GZ</text>
+</svg>

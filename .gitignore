@@ -1,18 +1,40 @@
+# Secrets
 .env
+
+# Python
 .venv/
-output/
 __pycache__/
 *.pyc
+
+# Runtime data
+output/
+uploads/
+training/lora_versions/
+aukcje/
+
+# Frontend build
+frontend/dist/
+frontend/node_modules/
+
+# OS
 .DS_Store
-poc-aukcje.py
-styles_integration.py
+
+# Backup / temp
 *.bak
+
+# Images (raw uploads, not source code)
 *.jpeg
 *.jpg
 *.png
+
+# Legacy / removed files
+poc-aukcje.py
+styles_integration.py
+generator-ui-v1.html
+
+# Working docs (local only)
 research-*.md
 SPEC-*.md
 PLAN-*.md
 test-*.md
 specyfikacje.md
-generator-ui-v1.html

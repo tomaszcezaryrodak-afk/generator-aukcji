@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Skrypt uruchamiajacy trening LoRA via FAL.AI.
-Uzycie: .venv/bin/python3 run_lora_training.py
-Szacowany koszt: ~$8.00 (1000 krokow x $0.008/krok)
+Skrypt uruchamiający trening LoRA via FAL.AI.
+Użycie: .venv/bin/python3 run_lora_training.py
+Szacowany koszt: ~$8.00 (1000 kroków x $0.008/krok)
 Szacowany czas: 15-30 min
 """
 import asyncio
@@ -17,7 +17,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
 # Ustaw FAL_KEY
 fal_key = os.environ.get("FAL_AI_API_KEY", "")
 if not fal_key:
-    print("BLAD: Brak FAL_AI_API_KEY w .env")
+    print("BŁĄD: Brak FAL_AI_API_KEY w .env")
     sys.exit(1)
 os.environ["FAL_KEY"] = fal_key
 
@@ -40,28 +40,28 @@ async def main():
     logger.info(f"Dataset URL: {dataset_url[:80]}...")
 
     # Etap 2: Trening
-    logger.info(f"=== ETAP 2: Trening ({steps} krokow, ~${steps * 0.008:.2f}) ===")
+    logger.info(f"=== ETAP 2: Trening ({steps} kroków, ~${steps * 0.008:.2f}) ===")
     result = await trainer.train(dataset_url)
 
     lora_url = ""
     if isinstance(result, dict):
         lora_url = result.get("diffusers_lora_file", {}).get("url", "")
     if not lora_url:
-        logger.error("Trening nie zwrocil URL do LoRA")
+        logger.error("Trening nie zwrócił URL do LoRA")
         logger.error(f"Result: {result}")
         sys.exit(1)
 
     logger.info(f"LoRA URL: {lora_url}")
 
-    # Etap 3: Zapisz wersje
+    # Etap 3: Zapisz wersję
     logger.info("=== ETAP 3: Zapisanie wersji ===")
     version = await trainer.save_version(lora_url, {"quality_gate": False, "steps": steps})
     logger.info(f"Zapisano jako {version}")
 
-    # Etap 4: Quality gate (generowanie testowych obrazow)
+    # Etap 4: Quality gate (generowanie testowych obrazów)
     logger.info("=== ETAP 4: Quality gate ===")
     validation = await trainer.validate(lora_url)
-    logger.info(f"Wyniki walidacji: {validation.get('test_count', 0)} testow")
+    logger.info(f"Wyniki walidacji: {validation.get('test_count', 0)} testów")
     logger.info(f"Obrazy testowe w: training/lora_versions/test_results/")
 
     # Podsumowanie

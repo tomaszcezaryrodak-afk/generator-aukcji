@@ -1,20 +1,42 @@
-# Generator Aukcji - zmienne srodowiskowe
+# Generator Aukcji v4.3 - zmienne srodowiskowe
 # Skopiuj do .env i uzupelnij wartosci
 
-# Streamlit Cloud: wklej te wartości w Settings → Secrets
-# Format: key = "value"
+# === WYMAGANE ===
 
-# Gemini API (wymagane)
+# Gemini API (generowanie obrazow i tekstu)
 GEMINI_API_KEY=
 
-# Model Gemini (opcjonalne, domyślnie gemini-3-pro-image-preview)
-GEMINI_MODEL=
+# Haslo dostepu do aplikacji (bcrypt hash lub plain text)
+APP_PASSWORD=
 
-# BaseLinker API (opcjonalne, do wysylki produktow)
+# === OPCJONALNE ===
+
+# FAL.AI (KontextMax, Flux2, LoRA)
+FAL_AI_API_KEY=
+
+# OpenAI (GPT Image 1.5, wylaczone domyslnie)
+OPENAI_API_KEY=
+
+# Modele Gemini (domyslne wartosci w config.py)
+GEMINI_MODEL=gemini-3-pro-image-preview
+GEMINI_TEXT_MODEL=gemini-3-pro
+GEMINI_FLASH_IMAGE_MODEL=gemini-3.1-flash-image-preview
+GEMINI_PRO_IMAGE_MODEL=gemini-3-pro-image-preview
+
+# Modele obrazow
+OPENAI_IMAGE_MODEL=gpt-image-1.5
+
+# LoRA
+LORA_MODEL_PATH=
+
+# Domena produkcyjna (CORS)
+PROD_DOMAIN=
+
+# BaseLinker API (wysylka produktow na Allegro)
 BASELINKER_TOKEN=
 BASELINKER_INVENTORY_ID=8075
 BASELINKER_PRICE_GROUP_ID=3778
 BASELINKER_WAREHOUSE_ID=bl_5255
 
-# Haslo dostepu do dashboardu (opcjonalne)
-APP_PASSWORD=
+# Rate limiting (sekundy miedzy requestami API)
+RATE_LIMIT_SEC=2

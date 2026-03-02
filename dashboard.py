@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Dashboard: Generator Aukcji Produktowych v3.2
-Klient: Granitowe Zlewy (Marcin Mysliwiec)
+Dashboard: Generator Aukcji Produktowych v4.3
+Klient: Granitowe Zlewy (Marcin Myśliwiec)
 Stack: Streamlit + Gemini API + BaseLinker API
-Multi-katalog: Granitowe Zlewy + Oswietlenie LED
+Multi-katalog: Granitowe Zlewy + Oświetlenie LED
 """
 
 import hmac
@@ -70,7 +70,7 @@ BASE_DIR = Path(__file__).parent
 OUTPUT_DIR = BASE_DIR / "output"
 
 # Cennik API Gemini (gemini-3-pro-image-preview) - aktualizacja 27.02.2026
-USD_TO_PLN = 4.10
+USD_TO_PLN = 3.57
 COST_PER_IMAGE_USD = 0.134  # Potwierdzone ai.google.dev/pricing
 COST_PER_TEXT_CALL_EST = 0.02  # Szacunek per opis/ekstrakcja (~2k tokenów)
 
@@ -194,7 +194,7 @@ if "text_gen_count" not in st.session_state:
     st.session_state["text_gen_count"] = 0
 
 # ---------------------------------------------------------------------------
-# Naglowek
+# Nagłówek
 # ---------------------------------------------------------------------------
 
 st.markdown("""
@@ -227,7 +227,7 @@ if api_count > 0:
 
 ALLOWED_HTML_TAGS = {'h2', 'h3', 'p', 'ul', 'ol', 'li', 'b', 'strong', 'br', 'em', 'small'}
 
-# Komunikaty bledow API po polsku
+# Komunikaty błędów API po polsku
 ERROR_MESSAGES_PL = {
     "429": "Zbyt wiele zapytań do API. Odczekaj minutę i spróbuj ponownie.",
     "500": "Błąd serwera Gemini. Spróbuj ponownie za chwilę.",
@@ -252,7 +252,7 @@ def sanitize_html(html_text):
     """Usuwa tagi HTML spoza whitelisty, event handlers i atrybuty (ochrona przed XSS)."""
     # Decode encji HTML przed filtrowaniem (bypass &#111;nclick → onclick)
     html_text = html_lib.unescape(html_text)
-    # Usun event handlers (onclick, onload, onerror, etc.)
+    # Usuń event handlers (onclick, onload, onerror, etc.)
     html_text = re.sub(r'\s+on\w+\s*=\s*["\'][^"\']*["\']', '', html_text, flags=re.IGNORECASE)
     html_text = re.sub(r'\s+on\w+\s*=\s*\S+', '', html_text, flags=re.IGNORECASE)
 
@@ -313,7 +313,7 @@ def create_zip(images_dict, description_text, output_path):
             tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
             try:
                 img.save(tmp.name)
-                # A11: czytelne nazwy plikow
+                # A11: czytelne nazwy plików
                 if name.startswith("zdjecie_oryginalne_"):
                     zf.write(tmp.name, f"grafiki/oryginaly/{name}.png")
                 else:
@@ -337,7 +337,7 @@ def render_bl_push_section(sections, all_results, timestamp,
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         desc_text = sections.get("opis", "") or st.session_state.get("last_desc_raw", "")
         create_zip(all_results, desc_text, zip_path)
-        # B4: rotacja ZIP-ow
+        # B4: rotacja ZIP-ów
         cleanup_old_outputs(OUTPUT_DIR, max_files=50)
         with open(zip_path, "rb") as zf:
             st.download_button(
@@ -537,7 +537,7 @@ def validate_allegro_title(title):
 
 
 def render_results_section(all_results, sections, desc_text):
-    """Renderuje sekcje wynikow (grafiki + opis + parametry)."""
+    """Renderuje sekcję wyników (grafiki + opis + parametry)."""
     st.markdown(f"""
     <div class="gz-results">
         <div class="gz-results-header">
@@ -624,7 +624,7 @@ Koszt API: {gen_count} grafik x ${COST_PER_IMAGE_USD} + tekst = <b>{total_displa
 # A3: Historia generowań (expander zamiast sidebar)
 # ---------------------------------------------------------------------------
 
-# (przesunieta do main area, PO formularzu, PRZED wynikami - patrz nizej)
+# (przesunięta do main area, PO formularzu, PRZED wynikami - patrz niżej)
 
 # ---------------------------------------------------------------------------
 # A1: Formularz (sekwencyjny layout zamiast dwukolumnowego)
@@ -633,7 +633,7 @@ Koszt API: {gen_count} grafik x ${COST_PER_IMAGE_USD} + tekst = <b>{total_displa
 # --- SEKCJA: FORMULARZ ---
 st.markdown("### Dane produktu")
 
-# Wybor katalogu
+# Wybór katalogu
 catalog_names = get_catalog_display_names()
 catalog_key = st.selectbox(
     "Katalog produktowy",
@@ -987,7 +987,7 @@ if generate_btn:
                 if found_banned:
                     st.warning(f"Opis zawiera {len(found_banned)} fraz z ban listy: {', '.join(found_banned[:5])}. Użyj czatu do poprawek.")
 
-            # Zmien nazwy grafik na bazujace na tytule Allegro
+            # Zmień nazwy grafik na bazujące na tytule Allegro
             if sections["tytul"]:
                 slug = re.sub(r'[^\w\s-]', '', sections["tytul"][:50]).strip().replace(' ', '-')
                 renamed = {}
@@ -996,7 +996,7 @@ if generate_btn:
                     renamed[f"{slug}_{prefix}"] = img
                 all_results = renamed
 
-            # A11: czytelne nazwy plikow oryginalnych
+            # A11: czytelne nazwy plików oryginalnych
             for i, img in enumerate(pil_images):
                 all_results[f"zdjecie_oryginalne_{i+1}"] = img
 
@@ -1047,7 +1047,7 @@ if generate_btn:
             # --- Wyniki ---
             render_results_section(all_results, sections, desc_text)
 
-            # A13: disclaimer o weryfikacji opisow
+            # A13: disclaimer o weryfikacji opisów
             st.caption("Sprawdź wygenerowany opis przed publikacją. AI może zawierać nieścisłości w wymiarach lub parametrach.")
 
             # Czat do poprawek opisu
@@ -1066,7 +1066,7 @@ if generate_btn:
                 )
 
 else:
-    # Pokaz wyniki z session_state
+    # Pokaż wyniki z session_state
     if "last_results" in st.session_state and st.session_state["last_results"]:
         all_results = st.session_state["last_results"]
         sections = st.session_state.get("last_sections", {})
@@ -1077,7 +1077,7 @@ else:
 
         render_results_section(all_results, sections, desc_text)
 
-        # A13: disclaimer o weryfikacji opisow
+        # A13: disclaimer o weryfikacji opisów
         st.caption("Sprawdź wygenerowany opis przed publikacją. AI może zawierać nieścisłości w wymiarach lub parametrach.")
 
         # Czat do poprawek opisu
@@ -1218,6 +1218,6 @@ Zaznacz grafiki do poprawki, opisz co zmienić i kliknij Wyślij.
 
 st.markdown("""
 <div class="gz-footer">
-    <p>Generator Aukcji v3.2 · GranitoweZlewy · powered by <span>nanoAI</span></p>
+    <p>Generator Aukcji v4.3 · GranitoweZlewy · powered by <span>nanoAI</span></p>
 </div>
 """, unsafe_allow_html=True)

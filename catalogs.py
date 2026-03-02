@@ -1,7 +1,7 @@
 """
-System katalogow produktowych.
+System katalogów produktowych.
 
-Obsluguje rozne katalogi (zlewy, LED, etc.) z osobnymi kategoriami,
+Obsługuje różne katalogi (zlewy, LED, etc.) z osobnymi kategoriami,
 kolorami, danymi SEO i mapowaniem BaseLinker category_id.
 """
 
@@ -96,10 +96,10 @@ CATALOGS = {
                     "Zlewozmywak granitowy 1-komorowy 80x50 czarny + syfon [52 zn.]",
                     "Zlew granitowy jednokomorowy z ociekaczem czarny 80x50 cm [55 zn.]",
                 ],
-                "parametry_obowiazkowe": "material, kolor, liczba komor, stan, marka, kod producenta",
-                "parametry_opcjonalne": "typ montazu, ociekacz, strona ociekacza, wymiary, glebokosc komory, srednica odplywu, ksztalt, min szafka, waga, model",
-                "opis_elementy": "wymiary mm, material (80% granit), kolor, typ montazu, liczba komor, srednica odplywu, min szafka, waga, co w zestawie, nawiercanie otworow",
-                "usp": "Darmowe nawiercanie otworow pod baterie i dozownik. Syfon w zestawie gratis.",
+                "parametry_obowiazkowe": "materiał, kolor, liczba komór, stan, marka, kod producenta",
+                "parametry_opcjonalne": "typ montażu, ociekacz, strona ociekacza, wymiary, głębokość komory, średnica odpływu, kształt, min szafka, waga, model",
+                "opis_elementy": "wymiary mm, materiał (80% granit), kolor, typ montażu, liczba komór, średnica odpływu, min szafka, waga, co w zestawie, nawiercanie otworów",
+                "usp": "Darmowe nawiercanie otworów pod baterię i dozownik. Syfon w zestawie gratis.",
             },
             "bateria": {
                 "frazy": [
@@ -111,10 +111,10 @@ CATALOGS = {
                     "Bateria kuchenna FLEX elastyczna wylewka czarno-zlota 360\u00b0 [57 zn.]",
                     "Bateria zlewozmywakowa stojaca obrotowa czarna z wyciagana [55 zn.]",
                 ],
-                "parametry_obowiazkowe": "typ montazu, kolor, material, stan, marka",
-                "parametry_opcjonalne": "typ glowicy, obrot wylewki, rodzaj wylewki, wysokosc, zasieg wylewki, przylacze, wykonczenie",
-                "opis_elementy": "typ montazu, wysokosc, zasieg wylewki, obrot, typ glowicy, przylacze, kolor, co w zestawie",
-                "usp": "Elastyczna wylewka FLEX. Obrot 360 stopni. Ceramiczna glowica.",
+                "parametry_obowiazkowe": "typ montażu, kolor, materiał, stan, marka",
+                "parametry_opcjonalne": "typ głowicy, obrót wylewki, rodzaj wylewki, wysokość, zasięg wylewki, przyłącze, wykończenie",
+                "opis_elementy": "typ montażu, wysokość, zasięg wylewki, obrót, typ głowicy, przyłącze, kolor, co w zestawie",
+                "usp": "Elastyczna wylewka FLEX. Obrót 360 stopni. Ceramiczna głowica.",
             },
             "zestaw": {
                 "frazy": [
@@ -127,10 +127,10 @@ CATALOGS = {
                     "Zestaw zlew granitowy + bateria FLEX czarno-zlota + syfon [56 zn.]",
                     "Zlewozmywak kuchenny granitowy jednokomorowy 79x50 + bateria [60 zn.]",
                 ],
-                "parametry_obowiazkowe": "material, kolor, liczba komor, stan, marka, kod producenta",
-                "parametry_opcjonalne": "typ montazu, ociekacz, wymiary, glebokosc komory, srednica odplywu, min szafka, waga, typ baterii, kolor baterii",
-                "opis_elementy": "wymiary zlew mm, material granit, kolor, typ montazu, parametry baterii, srednica odplywu, co w zestawie (KOMPLET), nawiercanie",
-                "usp": "Wszystko w jednej paczce: zlew + bateria + syfon + montaz. Darmowe nawiercanie otworow. Zero dokupowan.",
+                "parametry_obowiazkowe": "materiał, kolor, liczba komór, stan, marka, kod producenta",
+                "parametry_opcjonalne": "typ montażu, ociekacz, wymiary, głębokość komory, średnica odpływu, min szafka, waga, typ baterii, kolor baterii",
+                "opis_elementy": "wymiary zlew mm, materiał granit, kolor, typ montażu, parametry baterii, średnica odpływu, co w zestawie (KOMPLET), nawiercanie",
+                "usp": "Wszystko w jednej paczce: zlew + bateria + syfon + montaż. Darmowe nawiercanie otworów. Zero dokupowań.",
             },
             "syfon": {
                 "frazy": [
@@ -141,9 +141,9 @@ CATALOGS = {
                     "Syfon do zlewozmywaka granitowego zloty automatyczny 3,5\" [52 zn.]",
                     "Syfon kuchenny do zlewu granitowego chrom z przelewem [53 zn.]",
                 ],
-                "parametry_obowiazkowe": "kolor, material, srednica, stan, marka",
-                "parametry_opcjonalne": "typ (automatyczny/manualny), przelew, srednica odplywu, wykonczenie",
-                "opis_elementy": "srednica, material, kolor, typ, kompatybilnosc z zlewami, co w zestawie",
+                "parametry_obowiazkowe": "kolor, materiał, średnica, stan, marka",
+                "parametry_opcjonalne": "typ (automatyczny/manualny), przelew, średnica odpływu, wykończenie",
+                "opis_elementy": "średnica, materiał, kolor, typ, kompatybilność z zlewami, co w zestawie",
                 "usp": "Dopasowany do zlewów GranitoweZlewy (średnica 3,5\"). Montaż bez narzędzi w 5 minut.",
             },
             "dozownik": {
@@ -155,10 +155,10 @@ CATALOGS = {
                     "Dozownik plynu do zabudowy zloty 300ml blatowy kuchenny [52 zn.]",
                     "Dozownik mydla kuchenny do zlewozmywaka czarny mat 350ml [55 zn.]",
                 ],
-                "parametry_obowiazkowe": "kolor, material, pojemnosc, stan, marka",
-                "parametry_opcjonalne": "typ montazu, srednica otworu, wykonczenie, wymiary",
-                "opis_elementy": "pojemnosc ml, material, kolor, typ montazu, srednica otworu, kompatybilnosc",
-                "usp": "Montaz w blacie jednym otworem. Pojemny zbiornik 300-350ml.",
+                "parametry_obowiazkowe": "kolor, materiał, pojemność, stan, marka",
+                "parametry_opcjonalne": "typ montażu, średnica otworu, wykończenie, wymiary",
+                "opis_elementy": "pojemność ml, materiał, kolor, typ montażu, średnica otworu, kompatybilność",
+                "usp": "Montaż w blacie jednym otworem. Pojemny zbiornik 300-350ml.",
             },
             "akcesoria": {
                 "frazy": [
@@ -169,10 +169,10 @@ CATALOGS = {
                     "Wezyk przylaczeniowy do baterii kuchennej 50cm M10 para [48 zn.]",
                     "Ruszt ochronny do zlewozmywaka granitowego 38x28 cm stal [52 zn.]",
                 ],
-                "parametry_obowiazkowe": "typ, material, wymiary, stan, marka",
-                "parametry_opcjonalne": "kolor, kompatybilnosc, dlugosc, srednica",
-                "opis_elementy": "typ, wymiary, material, kolor, kompatybilnosc z modelami",
-                "usp": "Oryginalne akcesoria GranitoweZlewy. Idealne dopasowanie do naszych zlewow.",
+                "parametry_obowiazkowe": "typ, materiał, wymiary, stan, marka",
+                "parametry_opcjonalne": "kolor, kompatybilność, długość, średnica",
+                "opis_elementy": "typ, wymiary, materiał, kolor, kompatybilność z modelami",
+                "usp": "Oryginalne akcesoria GranitoweZlewy. Idealne dopasowanie do naszych zlewów.",
             },
             "other": {
                 "frazy": ["wyposażenie kuchni", "akcesoria kuchenne"],
@@ -226,10 +226,10 @@ CATALOGS = {
                 "tytul_przyklady": [
                     "Panel LED sufitowy 60x60 40W 4000K biały neutralny [48 zn.]",
                 ],
-                "parametry_obowiazkowe": "moc W, barwa swiatla K, wymiary, stan, marka",
-                "parametry_opcjonalne": "strumien swietlny lm, zycie h, IP, CRI, sciemnianie",
-                "opis_elementy": "moc, barwa, wymiary, strumien, zycie, montaz, certyfikaty",
-                "usp": "Energooszczedne oswietlenie LED. Gwarancja 3 lata.",
+                "parametry_obowiazkowe": "moc W, barwa światła K, wymiary, stan, marka",
+                "parametry_opcjonalne": "strumień świetlny lm, żywotność h, IP, CRI, ściemnianie",
+                "opis_elementy": "moc, barwa, wymiary, strumień, żywotność, montaż, certyfikaty",
+                "usp": "Energooszczędne oświetlenie LED. Gwarancja 3 lata.",
             },
             "tasma": {
                 "frazy": [
@@ -239,10 +239,10 @@ CATALOGS = {
                 "tytul_przyklady": [
                     "Taśma LED 12V 5m biała ciepła 60LED/m wodoodporna IP65 [55 zn.]",
                 ],
-                "parametry_obowiazkowe": "napiecie V, dlugosc m, barwa, IP, stan, marka",
-                "parametry_opcjonalne": "liczba LED/m, moc W/m, CRI, sciemnianie, klej 3M",
-                "opis_elementy": "napiecie, dlugosc, barwa, IP, moc, montaz, kompatybilnosc",
-                "usp": "Latwy montaz. Klej 3M w zestawie. Cieciu co 5 cm.",
+                "parametry_obowiazkowe": "napięcie V, długość m, barwa, IP, stan, marka",
+                "parametry_opcjonalne": "liczba LED/m, moc W/m, CRI, ściemnianie, klej 3M",
+                "opis_elementy": "napięcie, długość, barwa, IP, moc, montaż, kompatybilność",
+                "usp": "Łatwy montaż. Klej 3M w zestawie. Cięcie co 5 cm.",
             },
             "profil": {
                 "frazy": [
@@ -252,10 +252,10 @@ CATALOGS = {
                 "tytul_przyklady": [
                     "Profil aluminiowy do taśmy LED 2m z kloszem mlecznym [50 zn.]",
                 ],
-                "parametry_obowiazkowe": "dlugosc m, typ (nakladany/wpuszczany/narozny), material, stan, marka",
-                "parametry_opcjonalne": "szerokosc mm, klosz, zagluszki, uchwyty",
-                "opis_elementy": "dlugosc, typ, material, klosz, kompatybilnosc z tasmami",
-                "usp": "Estetyczne wykonczenie instalacji LED. Klosz mleczny eliminuje punkty swietlne.",
+                "parametry_obowiazkowe": "długość m, typ (nakładany/wpuszczany/narożny), materiał, stan, marka",
+                "parametry_opcjonalne": "szerokość mm, klosz, zaślepki, uchwyty",
+                "opis_elementy": "długość, typ, materiał, klosz, kompatybilność z taśmami",
+                "usp": "Estetyczne wykończenie instalacji LED. Klosz mleczny eliminuje punkty świetlne.",
             },
             "zasilacz": {
                 "frazy": [
@@ -265,10 +265,10 @@ CATALOGS = {
                 "tytul_przyklady": [
                     "Zasilacz LED 12V 60W 5A do taśmy LED IP67 wodoodporny [52 zn.]",
                 ],
-                "parametry_obowiazkowe": "napiecie wyjsciowe V, moc W, IP, stan, marka",
-                "parametry_opcjonalne": "prad A, wymiary, zabezpieczenia, certyfikaty",
-                "opis_elementy": "napiecie, moc, prad, IP, zabezpieczenia, certyfikaty, montaz",
-                "usp": "Stabilne napiecie. Zabezpieczenie przed przeciazeniem i zwarciem.",
+                "parametry_obowiazkowe": "napięcie wyjściowe V, moc W, IP, stan, marka",
+                "parametry_opcjonalne": "prąd A, wymiary, zabezpieczenia, certyfikaty",
+                "opis_elementy": "napięcie, moc, prąd, IP, zabezpieczenia, certyfikaty, montaż",
+                "usp": "Stabilne napięcie. Zabezpieczenie przed przeciążeniem i zwarciem.",
             },
             "sterownik": {
                 "frazy": [
@@ -278,10 +278,10 @@ CATALOGS = {
                 "tytul_przyklady": [
                     "Ściemniacz LED 12-24V z pilotem RF dotykowy panel [48 zn.]",
                 ],
-                "parametry_obowiazkowe": "napiecie V, max moc W, typ sterowania, stan, marka",
-                "parametry_opcjonalne": "pilot, wifi, kompatybilnosc, kanaly",
-                "opis_elementy": "napiecie, moc, typ sterowania, kompatybilnosc, montaz",
-                "usp": "Plynna regulacja jasnosci. Pilot w zestawie.",
+                "parametry_obowiazkowe": "napięcie V, max moc W, typ sterowania, stan, marka",
+                "parametry_opcjonalne": "pilot, wifi, kompatybilność, kanały",
+                "opis_elementy": "napięcie, moc, typ sterowania, kompatybilność, montaż",
+                "usp": "Płynna regulacja jasności. Pilot w zestawie.",
             },
             "oprawa": {
                 "frazy": [
@@ -291,10 +291,10 @@ CATALOGS = {
                 "tytul_przyklady": [
                     "Oprawa LED podtynkowa okrągła 12W 4000K biała slim [48 zn.]",
                 ],
-                "parametry_obowiazkowe": "moc W, barwa K, typ montazu, ksztalt, stan, marka",
-                "parametry_opcjonalne": "srednica mm, IP, CRI, sciemnianie, kat swiecenia",
-                "opis_elementy": "moc, barwa, typ montazu, srednica, IP, CRI, montaz",
-                "usp": "Slim design. Latwy montaz. Rowne swiatlo bez migotania.",
+                "parametry_obowiazkowe": "moc W, barwa K, typ montażu, kształt, stan, marka",
+                "parametry_opcjonalne": "średnica mm, IP, CRI, ściemnianie, kąt świecenia",
+                "opis_elementy": "moc, barwa, typ montażu, średnica, IP, CRI, montaż",
+                "usp": "Slim design. Łatwy montaż. Równe światło bez migotania.",
             },
             "akcesoria": {
                 "frazy": [
@@ -304,10 +304,10 @@ CATALOGS = {
                 "tytul_przyklady": [
                     "Złączka do taśmy LED 10mm 2-pin szybkozłączka 5szt [45 zn.]",
                 ],
-                "parametry_obowiazkowe": "typ, kompatybilnosc, ilosc w opakowaniu, stan, marka",
-                "parametry_opcjonalne": "szerokosc mm, material, IP",
-                "opis_elementy": "typ, kompatybilnosc, material, ilosc, sposob montazu",
-                "usp": "Montaz bez lutowania. Kompatybilne z popularnymi tasmami LED.",
+                "parametry_obowiazkowe": "typ, kompatybilność, ilość w opakowaniu, stan, marka",
+                "parametry_opcjonalne": "szerokość mm, materiał, IP",
+                "opis_elementy": "typ, kompatybilność, materiał, ilość, sposób montażu",
+                "usp": "Montaż bez lutowania. Kompatybilne z popularnymi taśmami LED.",
             },
             "other": {
                 "frazy": ["oświetlenie LED", "akcesoria oświetleniowe"],
@@ -333,22 +333,22 @@ CATALOGS = {
 
 
 def get_catalog(catalog_name):
-    """Zwraca konfiguracje katalogu lub None."""
+    """Zwraca konfigurację katalogu lub None."""
     return CATALOGS.get(catalog_name)
 
 
 def get_catalog_names():
-    """Zwraca liste nazw katalogow (klucze)."""
+    """Zwraca listę nazw katalogów (klucze)."""
     return list(CATALOGS.keys())
 
 
 def get_catalog_display_names():
-    """Zwraca dict {klucz: nazwa wyswietlana} dla selectbox."""
+    """Zwraca dict {klucz: nazwa wyświetlana} dla selectbox."""
     return {k: v["name"] for k, v in CATALOGS.items()}
 
 
 def get_categories(catalog_name):
-    """Zwraca liste kategorii dla katalogu."""
+    """Zwraca listę kategorii dla katalogu."""
     cat = CATALOGS.get(catalog_name)
     if not cat:
         return []
@@ -356,7 +356,7 @@ def get_categories(catalog_name):
 
 
 def get_kolor_map(catalog_name):
-    """Zwraca mape kolorow dla katalogu."""
+    """Zwraca mapę kolorów dla katalogu."""
     cat = CATALOGS.get(catalog_name)
     if not cat:
         return {}
@@ -364,7 +364,7 @@ def get_kolor_map(catalog_name):
 
 
 def get_seo_key(kategoria):
-    """Mapuje kategorie na klucz SEO."""
+    """Mapuje kategorię na klucz SEO."""
     kat_lower = kategoria.lower()
     if "zestaw" in kat_lower:
         return "zestaw"
@@ -411,7 +411,7 @@ def get_seo_data(catalog_name, kategoria):
 
 
 def get_bl_category_id(catalog_name, kategoria):
-    """Zwraca BL category_id dla kategorii. 0 = domyslny BL."""
+    """Zwraca BL category_id dla kategorii. 0 = domyślny BL."""
     cat = CATALOGS.get(catalog_name)
     if not cat:
         return 0
@@ -419,11 +419,11 @@ def get_bl_category_id(catalog_name, kategoria):
 
 
 # ---------------------------------------------------------------------------
-# Features per typ produktu (mapowanie parametrow Allegro)
-# Zrodlo: BASELINKER-RECON.md
+# Features per typ produktu (mapowanie parametrów Allegro)
+# Źródło: BASELINKER-RECON.md
 # ---------------------------------------------------------------------------
 
-# Domyslne pola obecne w kazdym produkcie
+# Domyślne pola obecne w każdym produkcie
 _DEFAULT_FEATURES = ["Stan", "Stan opakowania", "EAN", "Kod producenta", "Marka"]
 
 FEATURES_PER_TYPE = {
@@ -479,7 +479,7 @@ FEATURES_PER_TYPE = {
 def get_features_for_type(kategoria: str) -> dict:
     """Zwraca mapowanie features (required + defaults) dla kategorii.
 
-    Uzywa get_seo_key do normalizacji nazwy kategorii.
+    Używa get_seo_key do normalizacji nazwy kategorii.
     """
     seo_key = get_seo_key(kategoria)
     return FEATURES_PER_TYPE.get(seo_key, {

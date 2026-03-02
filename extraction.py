@@ -1,13 +1,13 @@
 """
 Auto-ekstrakcja danych ze specyfikacji produktu.
 
-Uzywa Gemini text API do parsowania specyfikacji na ustrukturyzowany JSON.
+Używa Gemini text API do parsowania specyfikacji na ustrukturyzowany JSON.
 """
 
 import json
 import logging
 
-from config import MODEL
+from config import GEMINI_TEXT_MODEL
 
 try:
     from prompts import get_extraction_prompt
@@ -48,7 +48,7 @@ def extract_spec_data(client, spec_text, pil_images=None):
     Args:
         client: Gemini API client
         spec_text: tekst specyfikacji produktu
-        pil_images: opcjonalne zdjecia PIL (do analizy wizualnej)
+        pil_images: opcjonalne zdjęcia PIL (do analizy wizualnej)
 
     Returns:
         dict zgodny z EXTRACTION_SCHEMA. Brak danych = None.
@@ -64,7 +64,7 @@ def extract_spec_data(client, spec_text, pil_images=None):
             contents += pil_images[:4]
 
         response = client.models.generate_content(
-            model=MODEL,
+            model=GEMINI_TEXT_MODEL,
             contents=contents,
             config=types.GenerateContentConfig(response_modalities=["TEXT"]) if types else None,
         )
@@ -77,7 +77,7 @@ def extract_spec_data(client, spec_text, pil_images=None):
             if part.text:
                 raw_text += part.text
 
-        # Wyciagnij JSON z odpowiedzi
+        # Wyciągnij JSON z odpowiedzi
         raw_text = raw_text.strip()
         if "```" in raw_text:
             parts = raw_text.split("```")
@@ -91,7 +91,7 @@ def extract_spec_data(client, spec_text, pil_images=None):
 
         parsed = json.loads(raw_text)
 
-        # Walidacja zakresow
+        # Walidacja zakresów
         for key, value in parsed.items():
             if key not in EXTRACTION_SCHEMA:
                 continue
@@ -107,11 +107,13 @@ def extract_spec_data(client, spec_text, pil_images=None):
                 result[key] = value if 0 < value < 200 else None
             elif key in ("glebokosc_komory_mm",) and isinstance(value, (int, float)):
                 result[key] = value if 0 < value < 500 else None
+            elif key == "srednica_odplywu" and isinstance(value, (int, float)):
+                result[key] = value if 0 < value < 200 else None
             else:
                 result[key] = value
 
     except json.JSONDecodeError:
-        logging.warning("Ekstrakcja: Gemini nie zwrócił prawidłowego JSON")
+        logging.warning("Ekstrakcja: Gemini nie zwrócił poprawnego JSON")
     except Exception as e:
         logging.warning(f"Ekstrakcja specyfikacji: {type(e).__name__}: {e}")
 

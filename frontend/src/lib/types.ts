@@ -96,6 +96,8 @@ export interface WizardState {
   // Global
   totalCost: number;
   modelCosts: Record<string, number>;
+  elapsedSeconds: number;
+  generatedAt: string;
   error: string | null;
 }
 
@@ -124,5 +126,7 @@ export type WizardAction =
   | { type: 'SET_DESCRIPTION'; html: string }
   | { type: 'UPDATE_RESULT_IMAGE'; key: string; image: GeneratedImage }
   | { type: 'SET_COST'; total: number; perModel: Record<string, number> }
+  | { type: 'SET_ELAPSED'; seconds: number; timestamp: string }
   | { type: 'SET_ERROR'; error: string | null }
+  | { type: 'CLEAR_CHAT' }
   | { type: 'RESET' };
